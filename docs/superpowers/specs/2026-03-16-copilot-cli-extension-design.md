@@ -71,8 +71,8 @@ A Copilot CLI extension using `@github/copilot-sdk/extension`.
 Logic (ported from `src/hooks/post-tool-use.ts`, adapted for in-memory model):
 
 1. If `toolName === "bash"`:
-   a. Detect `freefsm start` → extract `run_id` from command flags or tool result, store in `activeRunId`
-   b. Detect `freefsm finish` or `freefsm goto done` → clear `activeRunId`, reset counter
+   a. Detect `freefsm start` → extract `run_id` from command flags or tool result, store in `activeRunId`, reset counter to 0
+   b. Detect `freefsm finish` or `freefsm goto done` → clear `activeRunId`, reset counter to 0
 2. If no `activeRunId` → return (nothing to do)
 3. Increment in-memory counter
 4. If `counter % 5 !== 0` → return
@@ -80,9 +80,9 @@ Logic (ported from `src/hooks/post-tool-use.ts`, adapted for in-memory model):
 6. Parse JSON response, build state reminder text
 7. Return `{ additionalContext: reminder }`
 
-**`onSessionStart`** — cost optimization context injection
+**`onSessionStart`** — cost optimization context injection (user-requested)
 
-Injects Copilot-specific guidance as `additionalContext`:
+Copilot CLI charges per premium request (per model turn). The user explicitly requested strong emphasis on using `ask_user` with structured forms to minimize turn count. This is injected as `additionalContext`:
 
 ```
 COPILOT COST OPTIMIZATION: Each model turn costs a premium request. When you
@@ -92,7 +92,7 @@ Batch related questions into a single ask_user call when possible. Prefer
 multiple-choice (enum) and boolean fields over open-ended string fields.
 ```
 
-If a previously active FSM run is detected (e.g., session resume), also injects the current state card.
+Session resume re-binding of `activeRunId` is out of scope (see Future Work). This hook only fires on fresh session start.
 
 #### Differences from Claude Code Hook
 
@@ -183,6 +183,7 @@ Add `"copilot/"` to the `files` array so it's included in the npm package.
 
 - Extension hooks fail silently (return undefined) — hooks should never break the agent
 - `execFile` errors (freefsm not found, run not found) are caught and ignored in hooks
+- If `freefsm current` returns a non-active run (completed/aborted externally), clear `activeRunId` and reset counter
 - Install command validates source directories exist before creating symlinks
 
 ## Future Work (Not in Scope)

@@ -105,6 +105,8 @@ Session resume re-binding of `activeRunId` is out of scope (see Future Work). Th
 | Output mechanism | Write JSON to stdout (`hookSpecificOutput`) | Return `{ additionalContext }` from hook |
 | Hook types available | PostToolUse only | onPostToolUse, onPreToolUse, onSessionStart, onSessionEnd, onErrorOccurred, onUserPromptSubmitted |
 
+**Cross-session behavior:** Both platforms behave identically — neither auto-resumes an FSM run across sessions. Claude Code uses file-based session binding because each hook invocation is a separate process; Copilot uses in-memory state because the extension IS the session. In both cases, the agent relies on conversation context to remember the `run_id` and re-engage the workflow. Copilot's `onSessionStart` with `source: "resume"` could enable auto-detection of active runs (via `freefsm list --status active`), but this is deferred to Future Work to maintain parity with Claude Code.
+
 #### No Native Tools Needed
 
 The extension does NOT register custom tools (`fsm_start`, `fsm_goto`, etc.). Rationale:
@@ -190,5 +192,5 @@ Add `"copilot/"` to the `files` array so it's included in the npm package.
 
 - `onPreToolUse` hook for per-state tool restrictions (`allowed_tools` in YAML)
 - Native tools as alternative to Bash CLI invocation
-- Session resume detection (re-bind `activeRunId` on `onSessionStart` with `source: "resume"`)
+- Session resume auto-detection: on `onSessionStart` with `source: "resume"`, call `freefsm list --status active -j` to auto-bind `activeRunId` (Copilot-specific enhancement beyond Claude Code parity)
 - Configurable reminder interval via environment variable

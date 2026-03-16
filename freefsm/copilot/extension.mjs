@@ -46,9 +46,13 @@ function extractRunId(cmd, toolResult) {
   const match = RUN_ID_FLAG_RE.exec(cmd);
   if (match) return match[1];
 
-  // Try parsing from tool result text
-  if (typeof toolResult === "string") {
-    const runIdMatch = /run_id:\s*(\S+)/.exec(toolResult);
+  // Try parsing from tool result (plain string or structured result)
+  const resultText = typeof toolResult === "string" 
+    ? toolResult 
+    : toolResult?.textResultForLlm;
+  
+  if (resultText) {
+    const runIdMatch = /run_id:\s*(\S+)/.exec(resultText);
     if (runIdMatch) return runIdMatch[1];
   }
 
@@ -91,38 +95,46 @@ async function buildReminder() {
     return null;
   }
 
-  const { state, prompt, todos, transitions } = envelope.data;
+  // Wrap reminder formatting in try/catch for fail-safe behavior
+  try {
+    const { state, prompt, todos, transitions } = envelope.data;
 
-  const lines = [];
-  lines.push(`[FSM Reminder] State: ${state}`);
-  lines.push("");
-
-  let promptText = prompt.trim();
-  if (promptText.length > 200) {
-    promptText = `${promptText.slice(0, 200)}...`;
-  }
-  lines.push(promptText);
-
-  if (todos && todos.length > 0) {
+    const lines = [];
+    lines.push(`[FSM Reminder] State: ${state}`);
     lines.push("");
-    lines.push("You MUST create a task for each of these items and complete them in order:");
-    for (const t of todos) {
-      lines.push(`  - ${t}`);
+
+    let promptText = prompt.trim();
+    if (promptText.length > 200) {
+      promptText = `${promptText.slice(0, 200)}...`;
     }
-  }
+    lines.push(promptText);
 
-  const entries = Object.entries(transitions);
-  if (entries.length > 0) {
-    lines.push("");
-    lines.push("Transitions:");
-    for (const [label, target] of entries) {
-      lines.push(`  ${label} → ${target}`);
+    if (todos && todos.length > 0) {
+      lines.push("");
+      lines.push("You MUST create a task for each of these items and complete them in order:");
+      for (const t of todos) {
+        lines.push(`  - ${t}`);
+      }
     }
-    lines.push("");
-    lines.push("Keep driving the workflow — do NOT stop until you reach a terminal state.");
-  }
 
-  return lines.join("\n");
+    const entries = Object.entries(transitions);
+    if (entries.length > 0) {
+      lines.push("");
+      lines.push("Transitions:");
+      for (const [label, target] of entries) {
+        lines.push(`  ${label} → ${target}`);
+      }
+      lines.push("");
+      lines.push("Keep driving the workflow — do NOT stop until you reach a terminal state.");
+    }
+
+    return lines.join("\n");
+  } catch {
+    // Silently fail and clear state if reminder formatting fails
+    activeRunId = null;
+    counter = 0;
+    return null;
+  }
 }
 
 // --- Register extension ---
@@ -136,8 +148,8 @@ await joinSession({
 
     async onPostToolUse(input) {
       // 1. Auto-detect freefsm commands from Bash
-      if (input.toolName === "Bash") {
-        const cmd = typeof input.toolInput?.command === "string" ? input.toolInput.command : "";
+      if (input.toolName === "bash") {
+        const cmd = typeof input.toolArgs?.command === "string" ? input.toolArgs.command : "";
 
         if (START_RE.test(cmd)) {
           const runId = extractRunId(cmd, input.toolResult);

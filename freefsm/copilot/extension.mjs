@@ -47,9 +47,10 @@ function extractRunId(cmd, toolResult) {
   if (match) return match[1];
 
   // Try parsing from tool result (plain string or structured result)
-  const resultText =
-    typeof toolResult === "string" ? toolResult : toolResult?.textResultForLlm;
-
+  const resultText = typeof toolResult === "string" 
+    ? toolResult 
+    : toolResult?.textResultForLlm;
+  
   if (resultText) {
     const runIdMatch = /run_id:\s*(\S+)/.exec(resultText);
     if (runIdMatch) return runIdMatch[1];
@@ -110,9 +111,7 @@ async function buildReminder() {
 
     if (todos && todos.length > 0) {
       lines.push("");
-      lines.push(
-        "You MUST create a task for each of these items and complete them in order:",
-      );
+      lines.push("You MUST create a task for each of these items and complete them in order:");
       for (const t of todos) {
         lines.push(`  - ${t}`);
       }
@@ -126,9 +125,7 @@ async function buildReminder() {
         lines.push(`  ${label} → ${target}`);
       }
       lines.push("");
-      lines.push(
-        "Keep driving the workflow — do NOT stop until you reach a terminal state.",
-      );
+      lines.push("Keep driving the workflow — do NOT stop until you reach a terminal state.");
     }
 
     return lines.join("\n");
@@ -152,8 +149,7 @@ await joinSession({
     async onPostToolUse(input) {
       // 1. Auto-detect freefsm commands from Bash
       if (input.toolName === "bash") {
-        const cmd =
-          typeof input.toolArgs?.command === "string" ? input.toolArgs.command : "";
+        const cmd = typeof input.toolArgs?.command === "string" ? input.toolArgs.command : "";
 
         if (START_RE.test(cmd)) {
           const runId = extractRunId(cmd, input.toolResult);

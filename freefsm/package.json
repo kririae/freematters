@@ -36,7 +36,15 @@
   "engines": {
     "node": ">=18"
   },
-  "files": ["dist/", "prompts/", "workflows/", "skills/", "hooks/", ".claude-plugin/"],
+  "files": [
+    "dist/",
+    "prompts/",
+    "workflows/",
+    "skills/",
+    "hooks/",
+    ".claude-plugin/",
+    "copilot/"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/freematters/freematters",

@@ -4,13 +4,14 @@ import {
   mkdirSync,
   readlinkSync,
   renameSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-type Platform = "claude" | "codex";
+type Platform = "claude" | "codex" | "copilot";
 
 const MARKETPLACE_NAME = "freefsm-local";
 const PLUGIN_NAME = "freefsm";
@@ -26,13 +27,39 @@ export function install(platform: Platform): void {
 
   if (platform === "claude") {
     installClaude(packageRoot);
-  } else {
+  } else if (platform === "codex") {
     installCodex(packageRoot);
+  } else {
+    installCopilot(packageRoot);
   }
 }
 
 function run(cmd: string, args: string[]): void {
   execFileSync(cmd, args, { stdio: "inherit" });
+}
+
+function linkTarget(source: string, target: string, label: string): void {
+  // Replace existing target, backing up if it's not a symlink
+  if (existsSync(target)) {
+    try {
+      readlinkSync(target);
+      // It's a symlink — safe to remove and update
+      unlinkSync(target);
+      console.log(`Updating existing symlink: ${target}`);
+    } catch {
+      // Not a symlink — back it up
+      const backup = `${target}.bak`;
+      // Remove old backup if it exists
+      if (existsSync(backup)) {
+        rmSync(backup, { recursive: true, force: true });
+      }
+      renameSync(target, backup);
+      console.log(`Backed up ${target} -> ${backup}`);
+    }
+  }
+
+  symlinkSync(source, target);
+  console.log(`${label}: ${target} -> ${source}`);
 }
 
 function installClaude(packageRoot: string): void {
@@ -66,24 +93,46 @@ function installCodex(packageRoot: string): void {
 
   mkdirSync(agentsDir, { recursive: true });
 
-  // Replace existing target, backing up if it's not a symlink
-  if (existsSync(target)) {
-    try {
-      readlinkSync(target);
-      // It's a symlink — safe to remove and update
-      unlinkSync(target);
-      console.log(`Updating existing symlink: ${target}`);
-    } catch {
-      // Not a symlink — back it up
-      const backup = `${target}.bak`;
-      renameSync(target, backup);
-      console.log(`Backed up ${target} -> ${backup}`);
-    }
-  }
-
-  symlinkSync(skillsSource, target);
-  console.log(`FreeFSM skills linked for Codex: ${target} -> ${skillsSource}`);
+  linkTarget(skillsSource, target, "FreeFSM skills linked for Codex");
   console.log(
     `\nNote: Codex does not support hooks. The agent won't get periodic state reminders.`,
   );
+}
+
+function installCopilot(packageRoot: string): void {
+  const skillsSource = join(packageRoot, "skills");
+  const copilotSource = join(packageRoot, "copilot");
+  const copilotSkillsDir = join(homedir(), ".copilot", "skills");
+  const copilotExtensionsDir = join(homedir(), ".copilot", "extensions");
+  const skillsTarget = join(copilotSkillsDir, PLUGIN_NAME);
+  const extensionsTarget = join(copilotExtensionsDir, PLUGIN_NAME);
+
+  if (!existsSync(skillsSource)) {
+    console.error(`Skills directory not found: ${skillsSource}`);
+    process.exit(2);
+  }
+
+  if (!existsSync(copilotSource)) {
+    console.error(`Copilot directory not found: ${copilotSource}`);
+    console.error(
+      "\nThis appears to be an older version of freefsm without Copilot CLI support.",
+    );
+    console.error(
+      "Please upgrade to the latest version: npm install -g @freematters/freefsm",
+    );
+    process.exit(2);
+  }
+
+  mkdirSync(copilotSkillsDir, { recursive: true });
+  mkdirSync(copilotExtensionsDir, { recursive: true });
+
+  linkTarget(skillsSource, skillsTarget, "Skills linked");
+  linkTarget(copilotSource, extensionsTarget, "Extensions linked");
+
+  console.log("\nFreeFSM extensions linked for Copilot.");
+  console.log(
+    "\nSkills: /freefsm:create, /freefsm:start, /freefsm:current, /freefsm:finish",
+  );
+  console.log("Hook: PostToolUse state reminder (every 5 tool calls)");
+  console.log("\nRestart or reload the Copilot CLI to activate the extensions.");
 }

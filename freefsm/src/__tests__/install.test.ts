@@ -157,6 +157,122 @@ describeClaude("install claude", () => {
   });
 });
 
+// ─── Copilot install ────────────────────────────────────────────
+
+describe("install copilot", () => {
+  const copilotSkillsDir = join(homedir(), ".copilot", "skills");
+  const copilotExtensionsDir = join(homedir(), ".copilot", "extensions");
+  const skillsTarget = join(copilotSkillsDir, "freefsm");
+  const extensionsTarget = join(copilotExtensionsDir, "freefsm");
+  const skillsBackup = `${skillsTarget}.bak`;
+  const extensionsBackup = `${extensionsTarget}.bak`;
+
+  // Snapshot for restore
+  let savedSkillsLink: string | null = null;
+  let hadSkillsTarget = false;
+  let savedExtensionsLink: string | null = null;
+  let hadExtensionsTarget = false;
+
+  beforeAll(() => {
+    if (existsSync(skillsTarget)) {
+      hadSkillsTarget = true;
+      try {
+        savedSkillsLink = readlinkSync(skillsTarget);
+      } catch {
+        savedSkillsLink = null;
+      }
+    }
+    if (existsSync(extensionsTarget)) {
+      hadExtensionsTarget = true;
+      try {
+        savedExtensionsLink = readlinkSync(extensionsTarget);
+      } catch {
+        savedExtensionsLink = null;
+      }
+    }
+  });
+
+  afterAll(() => {
+    // Clean up test artifacts
+    if (existsSync(skillsTarget))
+      rmSync(skillsTarget, { recursive: true, force: true });
+    if (existsSync(skillsBackup))
+      rmSync(skillsBackup, { recursive: true, force: true });
+    if (existsSync(extensionsTarget))
+      rmSync(extensionsTarget, { recursive: true, force: true });
+    if (existsSync(extensionsBackup))
+      rmSync(extensionsBackup, { recursive: true, force: true });
+
+    // Restore original state
+    if (hadSkillsTarget && savedSkillsLink) {
+      mkdirSync(copilotSkillsDir, { recursive: true });
+      symlinkSync(savedSkillsLink, skillsTarget);
+    }
+    if (hadExtensionsTarget && savedExtensionsLink) {
+      mkdirSync(copilotExtensionsDir, { recursive: true });
+      symlinkSync(savedExtensionsLink, extensionsTarget);
+    }
+  });
+
+  test("creates symlinks to both skills and copilot directories", () => {
+    // Clean slate
+    if (existsSync(skillsTarget)) rmSync(skillsTarget, { force: true });
+    if (existsSync(extensionsTarget)) rmSync(extensionsTarget, { force: true });
+
+    const stdout = cli("install copilot");
+    expect(stdout).toContain("FreeFSM extensions linked for Copilot");
+
+    // Check skills symlink
+    expect(existsSync(skillsTarget)).toBe(true);
+    expect(lstatSync(skillsTarget).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(skillsTarget)).toBe(join(PACKAGE_ROOT, "skills"));
+
+    // Check copilot extensions symlink
+    expect(existsSync(extensionsTarget)).toBe(true);
+    expect(lstatSync(extensionsTarget).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(extensionsTarget)).toBe(join(PACKAGE_ROOT, "copilot"));
+  });
+
+  test("re-install updates existing symlinks", () => {
+    const stdout = cli("install copilot");
+    expect(stdout).toContain("Updating existing symlink");
+    expect(stdout).toContain("FreeFSM extensions linked for Copilot");
+
+    expect(lstatSync(skillsTarget).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(skillsTarget)).toBe(join(PACKAGE_ROOT, "skills"));
+    expect(lstatSync(extensionsTarget).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(extensionsTarget)).toBe(join(PACKAGE_ROOT, "copilot"));
+  });
+
+  test("backs up non-symlink targets", () => {
+    // Replace symlinks with regular directories
+    rmSync(skillsTarget, { force: true });
+    mkdirSync(skillsTarget, { recursive: true });
+    writeFileSync(join(skillsTarget, "skills-marker.txt"), "original-skills");
+
+    rmSync(extensionsTarget, { force: true });
+    mkdirSync(extensionsTarget, { recursive: true });
+    writeFileSync(join(extensionsTarget, "ext-marker.txt"), "original-extensions");
+
+    const stdout = cli("install copilot");
+    expect(stdout).toContain("Backed up");
+    expect(stdout).toContain("FreeFSM extensions linked for Copilot");
+
+    expect(lstatSync(skillsTarget).isSymbolicLink()).toBe(true);
+    expect(lstatSync(extensionsTarget).isSymbolicLink()).toBe(true);
+
+    expect(existsSync(skillsBackup)).toBe(true);
+    expect(readFileSync(join(skillsBackup, "skills-marker.txt"), "utf-8")).toBe(
+      "original-skills",
+    );
+
+    expect(existsSync(extensionsBackup)).toBe(true);
+    expect(readFileSync(join(extensionsBackup, "ext-marker.txt"), "utf-8")).toBe(
+      "original-extensions",
+    );
+  });
+});
+
 // ─── End-to-end workflow ────────────────────────────────────────
 
 const HELLO_WORKFLOW = `\

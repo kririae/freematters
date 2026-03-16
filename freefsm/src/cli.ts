@@ -165,13 +165,15 @@ program
 program
   .command("install")
   .description("register freefsm with an agent platform")
-  .argument("<platform>", "target platform: claude or codex")
+  .argument("<platform>", "target platform: claude, codex, or copilot")
   .action((platform: string) => {
-    if (platform !== "claude" && platform !== "codex") {
-      console.error(`Unknown platform "${platform}". Use "claude" or "codex".`);
+    if (platform !== "claude" && platform !== "codex" && platform !== "copilot") {
+      console.error(
+        `Unknown platform "${platform}". Use "claude", "codex", or "copilot".`,
+      );
       process.exit(2);
     }
-    install(platform as "claude" | "codex");
+    install(platform as "claude" | "codex" | "copilot");
   });
 
 // Hidden hook commands (not shown in --help)

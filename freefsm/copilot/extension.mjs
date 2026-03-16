@@ -117,7 +117,7 @@ async function buildReminder() {
       }
     }
 
-    const entries = Object.entries(transitions);
+    const entries = Object.entries(transitions ?? {});
     if (entries.length > 0) {
       lines.push("");
       lines.push("Transitions:");

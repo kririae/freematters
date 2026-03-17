@@ -76,7 +76,7 @@ function writeSkillFixture(
 }
 
 function createCopilotPackageFixture(
-  skillDir = "freefsm-create",
+  skillDir = "create",
   skillName = skillDir,
 ): string {
   const packageRoot = mkdtempSync(join(tmpdir(), "freefsm-copilot-plugin-compat-"));
@@ -248,5 +248,39 @@ describe("copilot plugin compatibility", () => {
         timeoutSec: 30,
       },
     ]);
+  });
+
+  test("Copilot skills match canonical skills after name normalization", () => {
+    const CANONICAL_SKILLS = ["create", "start", "current", "finish"];
+
+    const canonicalSkillsDir = join(PACKAGE_ROOT, "skills");
+    const copilotSkillsDir = join(PACKAGE_ROOT, "copilot", "skills");
+
+    // Copilot skill set must be exactly the canonical set
+    const copilotSkillDirs = readdirSync(copilotSkillsDir).sort();
+    expect(copilotSkillDirs).toEqual([...CANONICAL_SKILLS].sort());
+
+    for (const skill of CANONICAL_SKILLS) {
+      const canonical = readFileSync(
+        join(canonicalSkillsDir, skill, "SKILL.md"),
+        "utf-8",
+      );
+      const copilot = readFileSync(
+        join(copilotSkillsDir, skill, "SKILL.md"),
+        "utf-8",
+      );
+
+      // Copilot name field should be the plain skill name
+      const copilotNameMatch = copilot.match(/^name:\s+(.+)$/m);
+      expect(copilotNameMatch?.[1]).toBe(skill);
+
+      // Canonical name field should be the prefixed form
+      const canonicalNameMatch = canonical.match(/^name:\s+(.+)$/m);
+      expect(canonicalNameMatch?.[1]).toBe(`freefsm:${skill}`);
+
+      // After normalizing name: X → name: freefsm:X, content must match byte-for-byte
+      const normalized = copilot.replace(`name: ${skill}`, `name: freefsm:${skill}`);
+      expect(normalized).toBe(canonical);
+    }
   });
 });

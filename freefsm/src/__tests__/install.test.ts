@@ -242,12 +242,12 @@ describe("install copilot", () => {
     mkdirSync(join(packageRoot, ".copilot-plugin"), { recursive: true });
 
     if (options?.skills !== false) {
-      mkdirSync(join(packageRoot, "copilot", "skills", "freefsm-create"), {
+      mkdirSync(join(packageRoot, "copilot", "skills", "create"), {
         recursive: true,
       });
       writeFileSync(
-        join(packageRoot, "copilot", "skills", "freefsm-create", "SKILL.md"),
-        "---\nname: freefsm-create\ndescription: start.\n---\n",
+        join(packageRoot, "copilot", "skills", "create", "SKILL.md"),
+        "---\nname: create\ndescription: start.\n---\n",
       );
     }
 

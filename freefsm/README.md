@@ -63,7 +63,7 @@ FreeFSM is typically used through these skills:
 - `/freefsm:finish` — abort an active run
 
 Codex skill names use `$` instead of `/`.
-Copilot skill names use hyphens: `/freefsm-create`, `/freefsm-start`, `/freefsm-current`, `/freefsm-finish`.
+Copilot skill names use the plain form: `/create`, `/start`, `/current`, `/finish` (Copilot prefixes the plugin name automatically).
 
 ## Bundled Workflows
 

@@ -29,8 +29,8 @@ const COPILOT_PLUGIN_MANIFEST = JSON.stringify(
   {
     name: "freefsm",
     description: "CLI-first FSM runtime for agent workflows",
-    skills: ["copilot/skills"],
-    hooks: "copilot/hooks.json",
+    skills: ["skills"],
+    hooks: "hooks.json",
   },
   null,
   2,
@@ -67,7 +67,7 @@ function writeSkillFixture(
   dirName: string,
   skillName: string,
 ): void {
-  const skillDir = join(packageRoot, "copilot", "skills", dirName);
+  const skillDir = join(packageRoot, ".copilot-plugin", "skills", dirName);
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(
     join(skillDir, "SKILL.md"),
@@ -81,12 +81,18 @@ function createCopilotPackageFixture(
 ): string {
   const packageRoot = mkdtempSync(join(tmpdir(), "freefsm-copilot-plugin-compat-"));
 
-  mkdirSync(join(packageRoot, "copilot"), { recursive: true });
+  mkdirSync(join(packageRoot, ".copilot-plugin"), { recursive: true });
   mkdirSync(join(packageRoot, "dist", "copilot-hooks"), { recursive: true });
 
   writeSkillFixture(packageRoot, skillDir, skillName);
-  writeFileSync(join(packageRoot, "plugin.json"), COPILOT_PLUGIN_MANIFEST);
-  writeFileSync(join(packageRoot, "copilot", "hooks.json"), createCopilotHooksConfig());
+  writeFileSync(
+    join(packageRoot, ".copilot-plugin", "plugin.json"),
+    COPILOT_PLUGIN_MANIFEST,
+  );
+  writeFileSync(
+    join(packageRoot, ".copilot-plugin", "hooks.json"),
+    createCopilotHooksConfig(),
+  );
   writeFileSync(
     join(packageRoot, "dist", "copilot-hooks", "pre-tool-use.js"),
     "export {};\n",
@@ -140,12 +146,15 @@ describe("copilot plugin compatibility", () => {
 
   test("ships Copilot-compatible skill names", () => {
     const manifest = JSON.parse(
-      readFileSync(join(PACKAGE_ROOT, "plugin.json"), "utf-8"),
+      readFileSync(join(PACKAGE_ROOT, ".copilot-plugin", "plugin.json"), "utf-8"),
     ) as {
       skills?: string[];
+      hooks?: string;
     };
 
-    expect(manifest.skills).toEqual(["copilot/skills"]);
+    expect(manifest.skills).toEqual(["skills"]);
+    expect(manifest.hooks).toBe("hooks.json");
+    expect(existsSync(join(PACKAGE_ROOT, "plugin.json"))).toBe(false);
 
     const skillDirs = readdirSync(join(PACKAGE_ROOT, "copilot", "skills"));
 

@@ -211,18 +211,7 @@ function extractCopilotHookEntrypoints(
 }
 
 function validateCopilotPluginAssets(packageRoot: string): void {
-  let pluginManifestPath = join(packageRoot, COPILOT_PLUGIN_MANIFEST);
-  let usedWrapper = true;
-
-  if (!existsSync(pluginManifestPath)) {
-    // Backwards compatibility: fall back to root-level plugin.json if wrapper missing
-    const fallback = join(packageRoot, 'plugin.json');
-    if (existsSync(fallback)) {
-      pluginManifestPath = fallback;
-      usedWrapper = false;
-    }
-  }
-
+  const pluginManifestPath = join(packageRoot, COPILOT_PLUGIN_MANIFEST);
   const manifestDir = dirname(pluginManifestPath);
 
   const pluginManifest = readJsonFile<CopilotPluginManifest>(
@@ -232,11 +221,9 @@ function validateCopilotPluginAssets(packageRoot: string): void {
 
   validateCopilotSkills(manifestDir, pluginManifest);
 
-  const expectedHooks = usedWrapper ? COPILOT_HOOKS_CONFIG : 'copilot/hooks.json';
-
-  if (pluginManifest.hooks !== expectedHooks) {
+  if (pluginManifest.hooks !== COPILOT_HOOKS_CONFIG) {
     failInstall(
-      `plugin.json must set "hooks" to "${expectedHooks}" for Copilot installation.`,
+      `plugin.json must set "hooks" to "${COPILOT_HOOKS_CONFIG}" for Copilot installation.`,
     );
   }
 

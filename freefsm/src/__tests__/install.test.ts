@@ -61,9 +61,8 @@ function createCopilotHooksConfig(options?: {
         preToolUse: [
           {
             type: "command",
-            bash: options?.bash ?? "node ./dist/copilot-hooks/pre-tool-use.js",
-            powershell:
-              options?.powershell ?? "node .\\dist\\copilot-hooks\\pre-tool-use.js",
+            bash: options?.bash ?? "freefsm _hook pre-tool-use",
+            powershell: options?.powershell ?? "freefsm _hook pre-tool-use",
             timeoutSec: 30,
           },
         ],
@@ -376,32 +375,37 @@ describe("install copilot", () => {
     expect(output).toContain(join(packageRoot, "copilot", "skills"));
   });
 
-  test("fails clearly when built Copilot hook entrypoints are missing", () => {
-    const { packageRoot, hookEntrypoint } = createCopilotPackageFixture({
-      buildOutput: false,
-    });
+  test("does not require built Copilot hook entrypoints when hook uses CLI path", () => {
+    const { packageRoot } = createCopilotPackageFixture({ buildOutput: false });
+    const execSpy = vi.mocked(execFileSync).mockReturnValueOnce(Buffer.from(""));
 
-    const output = runInstallExpectingFailure(packageRoot);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect(output).toContain("Copilot hook entrypoint not found");
-    expect(output).toContain(hookEntrypoint);
-    expect(output).toContain("npm run build");
+    install("copilot", packageRoot);
+
+    expect(execSpy).toHaveBeenCalledWith(
+      "copilot",
+      ["plugin", "install", join(packageRoot, ".copilot-plugin")],
+      { stdio: "inherit" },
+    );
   });
 
-  test("fails clearly when hook entrypoints are not rooted at dist/copilot-hooks", () => {
-    const invalidHookPath = "./scripts/../../dist/copilot-hooks/pre-tool-use.js";
+  test("fails clearly when hooks bypass the freefsm CLI entry", () => {
+    const invalidHookCommand = "node ./dist/copilot-hooks/pre-tool-use.js";
     const { packageRoot } = createCopilotPackageFixture({
       hooksConfig: createCopilotHooksConfig({
-        bash: `node ${invalidHookPath}`,
+        bash: invalidHookCommand,
+        powershell: invalidHookCommand,
       }),
     });
 
     const output = runInstallExpectingFailure(packageRoot);
 
     expect(output).toContain(
-      "Copilot hook entrypoint must be rooted at dist/copilot-hooks/",
+      "copilot/hooks.json must invoke `freefsm _hook pre-tool-use` via both bash and powershell.",
     );
-    expect(output).toContain(invalidHookPath);
+    expect(output).toContain("freefsm _hook pre-tool-use");
   });
 
   test("re-install replaces wrong wrapper symlinks", () => {

@@ -50,8 +50,8 @@ function createCopilotHooksConfig(): string {
         preToolUse: [
           {
             type: "command",
-            bash: "node ./dist/copilot-hooks/pre-tool-use.js",
-            powershell: "node .\\dist\\copilot-hooks\\pre-tool-use.js",
+            bash: "freefsm _hook pre-tool-use",
+            powershell: "freefsm _hook pre-tool-use",
             timeoutSec: 30,
           },
         ],
@@ -219,6 +219,28 @@ describe("copilot plugin compatibility", () => {
 
     rmSync(tarballPath);
 
+  });
+
+  test("ships Copilot hook config through freefsm CLI entry", () => {
+    const hooks = JSON.parse(readFileSync(join(PACKAGE_ROOT, "copilot", "hooks.json"), "utf-8")) as {
+      hooks?: {
+        preToolUse?: Array<{
+          type?: string;
+          bash?: string;
+          powershell?: string;
+          timeoutSec?: number;
+        }>;
+      };
+    };
+
+    expect(hooks.hooks?.preToolUse).toEqual([
+      {
+        type: "command",
+        bash: "freefsm _hook pre-tool-use",
+        powershell: "freefsm _hook pre-tool-use",
+        timeoutSec: 30,
+      },
+    ]);
   });
 
 });

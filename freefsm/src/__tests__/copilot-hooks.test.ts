@@ -342,6 +342,23 @@ describe("reminder formatting", () => {
 });
 
 describe("pre-tool-use decisions", () => {
+  test("renders Copilot deny responses as permissionDecision JSON", async () => {
+    const { renderHookDecision } = await loadPreToolUseModule();
+
+    expect(renderHookDecision({ kind: "allow" })).toBeNull();
+    expect(
+      JSON.parse(
+        renderHookDecision({
+          kind: "deny",
+          reason: "[FSM plan] Check current state.",
+        }) ?? "",
+      ),
+    ).toEqual({
+      permissionDecision: "deny",
+      permissionDecisionReason: "[FSM plan] Check current state.",
+    });
+  });
+
   test("allows when there is no active binding", async () => {
     const { parseHookPayload } = await loadParseModule();
     const { evaluatePreToolUse } = await loadPreToolUseModule();

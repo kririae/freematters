@@ -121,6 +121,19 @@ function runHook(
   return JSON.parse(stdout);
 }
 
+function runPreToolHook(
+  input: Record<string, unknown>,
+  root: string,
+): Record<string, unknown> | null {
+  const stdout = execFileSync("node", [CLI, "_hook", "pre-tool-use"], {
+    input: JSON.stringify(input),
+    encoding: "utf-8",
+    env: { ...process.env, FREEFSM_ROOT: root },
+  });
+  if (!stdout.trim()) return null;
+  return JSON.parse(stdout);
+}
+
 // ─── CLI — start command ─────────────────────────────────────────
 
 describe("CLI — start command", () => {
@@ -592,5 +605,57 @@ describe("Hook — post-tool-use", () => {
       hookRoot,
     );
     expect(result).toBeNull();
+  });
+});
+
+describe("Hook — pre-tool-use", () => {
+  test("wires CLI _hook pre-tool-use to Copilot deny output", () => {
+    const id = uniqueRunId("copilot-hook");
+    const hookRoot = join(tmp, "copilot-hook-root");
+
+    run(`start ${fsmMulti} --run-id ${id}`, { root: hookRoot });
+
+    expect(
+      runPreToolHook(
+        {
+          sessionId: "copilot-sess",
+          cwd: "/workspace/project",
+          toolName: "bash",
+          toolInput: {
+            command: `freefsm start ${fsmMulti} --run-id ${id} --root ${hookRoot}`,
+          },
+        },
+        hookRoot,
+      ),
+    ).toBeNull();
+
+    for (let i = 0; i < 9; i++) {
+      expect(
+        runPreToolHook(
+          {
+            sessionId: "copilot-sess",
+            cwd: "/workspace/project",
+            toolName: "view",
+            toolInput: { path: "README.md" },
+          },
+          hookRoot,
+        ),
+      ).toBeNull();
+    }
+
+    expect(
+      runPreToolHook(
+        {
+          sessionId: "copilot-sess",
+          cwd: "/workspace/project",
+          toolName: "view",
+          toolInput: { path: "README.md" },
+        },
+        hookRoot,
+      ),
+    ).toMatchObject({
+      permissionDecision: "deny",
+      permissionDecisionReason: expect.stringContaining("[FSM"),
+    });
   });
 });

@@ -21,6 +21,7 @@ const PLUGIN_NAME = "freefsm";
 const COPILOT_PLUGIN_DIR = ".copilot-plugin";
 const COPILOT_PLUGIN_MANIFEST = ".copilot-plugin/plugin.json";
 const COPILOT_HOOKS_CONFIG = "hooks.json";
+const COPILOT_HOOK_COMMAND = "freefsm _hook pre-tool-use";
 const COPILOT_SKILL_NAME = /^[a-z0-9-]+$/;
 
 type CopilotPluginManifest = {
@@ -36,11 +37,6 @@ type CopilotHookDefinition = {
 
 type CopilotHooksConfig = {
   hooks?: Record<string, CopilotHookDefinition[] | undefined>;
-};
-
-type CopilotHookEntrypointExtraction = {
-  entrypoints: string[];
-  invalidEntrypoints: string[];
 };
 
 function getPackageRoot(): string {
@@ -90,16 +86,6 @@ function pathExists(path: string): boolean {
   } catch {
     return false;
   }
-}
-
-function extractShellTokens(command: string): string[] {
-  const tokens: string[] = [];
-
-  for (const match of command.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`|(\S+)/g)) {
-    tokens.push(match[1] ?? match[2] ?? match[3] ?? match[4]);
-  }
-
-  return tokens;
 }
 
 function asStringArray(value: unknown): string[] | null {
@@ -182,45 +168,6 @@ function validateCopilotSkills(
   }
 }
 
-function extractCopilotHookEntrypoints(
-  hooks: CopilotHookDefinition[],
-  packageRoot: string,
-): CopilotHookEntrypointExtraction {
-  const entrypoints = new Set<string>();
-  const invalidEntrypoints = new Set<string>();
-
-  for (const hook of hooks) {
-    for (const command of [hook.bash, hook.powershell]) {
-      if (typeof command !== "string") {
-        continue;
-      }
-
-      for (const token of extractShellTokens(command)) {
-        const normalizedToken = token.replaceAll("\\", "/");
-
-        if (normalizedToken.startsWith("./dist/copilot-hooks/")) {
-          entrypoints.add(resolve(packageRoot, normalizedToken.slice(2)));
-          continue;
-        }
-
-        if (normalizedToken.startsWith("dist/copilot-hooks/")) {
-          entrypoints.add(resolve(packageRoot, normalizedToken));
-          continue;
-        }
-
-        if (normalizedToken.includes("dist/copilot-hooks/")) {
-          invalidEntrypoints.add(token);
-        }
-      }
-    }
-  }
-
-  return {
-    entrypoints: [...entrypoints],
-    invalidEntrypoints: [...invalidEntrypoints],
-  };
-}
-
 function validateCopilotPluginAssets(packageRoot: string): void {
   const pluginManifestPath = join(packageRoot, COPILOT_PLUGIN_MANIFEST);
   const manifestDir = dirname(pluginManifestPath);
@@ -255,37 +202,17 @@ function validateCopilotPluginAssets(packageRoot: string): void {
     failInstall("copilot/hooks.json must define at least one preToolUse hook.");
   }
 
-  const { entrypoints, invalidEntrypoints } = extractCopilotHookEntrypoints(
-    preToolHooks,
-    packageRoot,
+  const invalidHooks = preToolHooks.filter(
+    (hook) =>
+      hook.type !== "command" ||
+      hook.bash !== COPILOT_HOOK_COMMAND ||
+      hook.powershell !== COPILOT_HOOK_COMMAND,
   );
 
-  if (invalidEntrypoints.length > 0) {
+  if (invalidHooks.length > 0) {
     failInstall([
-      ...invalidEntrypoints.map(
-        (entrypoint) =>
-          `Copilot hook entrypoint must be rooted at dist/copilot-hooks/: ${entrypoint}`,
-      ),
-      "Use dist/copilot-hooks/... or ./dist/copilot-hooks/... in copilot/hooks.json.",
-    ]);
-  }
-
-  if (entrypoints.length === 0) {
-    failInstall(
-      "copilot/hooks.json must reference built hook entrypoints rooted at dist/copilot-hooks/.",
-    );
-  }
-
-  const missingEntrypoints = entrypoints.filter(
-    (entrypoint) => !existsSync(entrypoint),
-  );
-
-  if (missingEntrypoints.length > 0) {
-    failInstall([
-      ...missingEntrypoints.map(
-        (entrypoint) => `Copilot hook entrypoint not found: ${entrypoint}`,
-      ),
-      "Run `npm run build` after the Copilot hooks are built under dist/copilot-hooks/.",
+      "copilot/hooks.json must invoke `freefsm _hook pre-tool-use` via both bash and powershell.",
+      `Expected bash and powershell to equal: ${COPILOT_HOOK_COMMAND}`,
     ]);
   }
 }

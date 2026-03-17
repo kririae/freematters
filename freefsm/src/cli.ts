@@ -12,6 +12,7 @@ import { list } from "./commands/list.js";
 import { run as runCmd } from "./commands/run.js";
 import { start } from "./commands/start.js";
 import { validate } from "./commands/validate.js";
+import { main as preToolUseMain } from "./copilot-hooks/pre-tool-use.js";
 import { main as postToolUseMain } from "./hooks/post-tool-use.js";
 
 function resolveRoot(flagRoot?: string): string {
@@ -180,6 +181,11 @@ program
 const hookCmd = program
   .command("_hook", { hidden: true })
   .description("internal hooks");
+
+hookCmd
+  .command("pre-tool-use")
+  .description("preToolUse hook handler (reads stdin)")
+  .action(() => preToolUseMain());
 
 hookCmd
   .command("post-tool-use")

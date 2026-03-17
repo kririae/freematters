@@ -225,7 +225,7 @@ This work is complete when all of the following are true:
 4. Real Copilot e2e passes without skill-load failures.
 5. No new install-time validation layer is added for Copilot skill metadata.
 6. `freefsm install copilot` stays limited to the baseline plugin install path rather than custom Copilot preflight validation.
-7. README and other user-facing guidance no longer advertise the incorrect hyphenated Copilot commands.
+7. README, related docs, and install/help text all use `/freefsm:*` Copilot commands and no longer advertise incorrect hyphenated commands.
 
 ## Risks and Mitigations
 

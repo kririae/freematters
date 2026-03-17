@@ -34,7 +34,6 @@ The compatibility boundary is:
 2. `freefsm/copilot/skills/*/SKILL.md` remains a Copilot-only copy, maintained manually.
 3. Copilot skill copies may differ only where Copilot requires it:
    - frontmatter `name:`
-   - explicit skill invocation strings in the body
 4. Skill behavior must otherwise stay aligned:
    - usage
    - process steps
@@ -133,7 +132,7 @@ The allowed substitutions are:
 - `name: freefsm:current` → `name: current`
 - `name: freefsm:finish` → `name: finish`
 
-No other intentional content simplification should remain in the Copilot copies.
+No other intentional content simplification or command-text rewriting should remain in the Copilot copies. In particular, the body should continue to show `/freefsm:create`, `/freefsm:start`, `/freefsm:current`, and `/freefsm:finish`, because Copilot prefixes the plugin name externally.
 
 ## Alignment Test Contract
 
@@ -153,7 +152,7 @@ This gives a precise, testable contract:
 - same file set
 - same behavior text
 - same process and error-handling content
-- only the approved Copilot naming substitutions differ
+- only the approved frontmatter naming substitutions differ
 
 ## Plugin and Install Surface
 
@@ -205,6 +204,17 @@ The implementation should avoid adding new Copilot-only behavior outside:
 - `copilot/skills` name adaptation
 - `preToolUse` hook handling
 
+### 4. User-facing documentation
+
+Update user-facing docs and install/help text that currently describe the wrong Copilot commands.
+
+After this alignment work, documented Copilot usage should match the intended UX:
+
+- `/freefsm:create`
+- `/freefsm:start`
+- `/freefsm:current`
+- `/freefsm:finish`
+
 ## Acceptance Criteria
 
 This work is complete when all of the following are true:
@@ -215,6 +225,7 @@ This work is complete when all of the following are true:
 4. Real Copilot e2e passes without skill-load failures.
 5. No new install-time validation layer is added for Copilot skill metadata.
 6. `freefsm install copilot` stays limited to the baseline plugin install path rather than custom Copilot preflight validation.
+7. README and other user-facing guidance no longer advertise the incorrect hyphenated Copilot commands.
 
 ## Risks and Mitigations
 

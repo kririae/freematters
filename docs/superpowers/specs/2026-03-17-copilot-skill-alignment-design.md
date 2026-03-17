@@ -35,7 +35,6 @@ The compatibility boundary is:
 3. Copilot skill copies may differ only where Copilot requires it:
    - frontmatter `name:`
    - explicit skill invocation strings in the body
-   - any other metadata-level syntax differences strictly required by Copilot
 4. Skill behavior must otherwise stay aligned:
    - usage
    - process steps
@@ -116,6 +115,15 @@ Keep Copilot-specific copies under:
 
 Each of these should be manually updated to match its canonical counterpart, except for required naming substitutions.
 
+The Copilot skill set must stay in 1:1 parity with the canonical skill set for this feature:
+
+- `create` ↔ `freefsm-create`
+- `start` ↔ `freefsm-start`
+- `current` ↔ `freefsm-current`
+- `finish` ↔ `freefsm-finish`
+
+Missing, renamed, or extra Copilot skills should be treated as a regression.
+
 ### Allowed substitutions
 
 The allowed substitutions are:
@@ -131,6 +139,30 @@ The allowed substitutions are:
 
 No other intentional content simplification should remain in the Copilot copies.
 
+## Alignment Test Contract
+
+The alignment test should compare each Copilot skill against its canonical counterpart after applying a deterministic normalization step to the Copilot file.
+
+Normalization should convert:
+
+- `name: freefsm-create` → `name: freefsm:create`
+- `name: freefsm-start` → `name: freefsm:start`
+- `name: freefsm-current` → `name: freefsm:current`
+- `name: freefsm-finish` → `name: freefsm:finish`
+- `/freefsm-create` → `/freefsm:create`
+- `/freefsm-start` → `/freefsm:start`
+- `/freefsm-current` → `/freefsm:current`
+- `/freefsm-finish` → `/freefsm:finish`
+
+After normalization, the Copilot file content should match the canonical file content exactly.
+
+This gives a precise, testable contract:
+
+- same file set
+- same behavior text
+- same process and error-handling content
+- only the approved Copilot naming substitutions differ
+
 ## Plugin and Install Surface
 
 ### `plugin.json`
@@ -141,10 +173,12 @@ This is a necessary platform-level exception, not a behavioral one.
 
 ### `freefsm install copilot`
 
-Minimize install logic changes:
+Minimize install logic changes by narrowing the installer to the baseline Copilot flow:
 
-- do not add new install-time skill metadata prechecks
-- keep installation focused on the minimum Copilot plugin install flow
+- invoke `copilot plugin install <package-root>`
+- keep only generic command-level failure handling
+- do not proactively validate Copilot skill metadata before install
+- do not add new Copilot-specific preflight checks in this alignment step
 - rely on real Copilot loading and tests to catch compatibility regressions
 
 This keeps install behavior narrow and avoids adding extra Copilot-specific exceptions outside the hook and naming layers.
@@ -155,7 +189,11 @@ This keeps install behavior narrow and avoids adding extra Copilot-specific exce
 
 Add or update tests so that each Copilot skill is compared against its canonical counterpart.
 
-The test should enforce that the diff is limited to the allowed naming substitutions listed above.
+The test should enforce all of the following:
+
+- the Copilot skill set is exactly the expected mirrored set
+- each Copilot skill maps to the correct canonical skill
+- after normalization, each Copilot skill matches its canonical file byte-for-byte
 
 This is the core regression guard against future drift.
 
@@ -184,6 +222,7 @@ This work is complete when all of the following are true:
 3. `plugin.json` still loads Copilot-compatible skills successfully.
 4. Real Copilot e2e passes without skill-load failures.
 5. No new install-time validation layer is added for Copilot skill metadata.
+6. `freefsm install copilot` stays limited to the baseline plugin install path rather than custom Copilot preflight validation.
 
 ## Risks and Mitigations
 

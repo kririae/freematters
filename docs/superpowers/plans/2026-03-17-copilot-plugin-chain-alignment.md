@@ -43,6 +43,7 @@
 
 **Files:**
 - Modify: `freefsm/src/__tests__/copilot-plugin-compat.test.ts`
+- Modify: `freefsm/package.json`
 - Reference: `freefsm/package.json`, `freefsm/plugin.json`, `freefsm/copilot/hooks.json`
 
 - [ ] **Step 1: Write a failing test for wrapper-local manifest expectations**
@@ -58,6 +59,8 @@ Add assertions that the Copilot manifest lives at `.copilot-plugin/plugin.json`,
 ```
 
 and that the package publish list includes `.copilot-plugin/` instead of the old root `plugin.json`.
+
+Also add a packaged-filesystem assertion that verifies an `npm pack` tarball contains `.copilot-plugin/plugin.json`.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 
@@ -94,7 +97,17 @@ cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freef
 
 Expected: PASS on the wrapper-manifest assertions.
 
-- [ ] **Step 5: Commit the wrapper-manifest change**
+- [ ] **Step 5: Run the packaged-filesystem verification**
+
+Run:
+
+```bash
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm pack
+```
+
+Expected: the produced tarball contains `.copilot-plugin/plugin.json` and no longer relies on a root-level Copilot manifest.
+
+- [ ] **Step 6: Commit the wrapper-manifest change**
 
 ```bash
 git add freefsm/.copilot-plugin/plugin.json freefsm/package.json freefsm/src/__tests__/copilot-plugin-compat.test.ts freefsm/plugin.json
@@ -105,6 +118,7 @@ git commit -m "refactor: move Copilot manifest into wrapper"
 
 **Files:**
 - Modify: `freefsm/src/commands/install.ts`
+- Modify: `freefsm/src/__tests__/install.test.ts`
 - Modify: `freefsm/src/__tests__/copilot-plugin-compat.test.ts`
 - Reference: `freefsm/src/__tests__/install.test.ts` for existing link-replacement patterns
 
@@ -116,13 +130,16 @@ Add tests that call `install("copilot", packageRoot)` and assert:
 - `.copilot-plugin/hooks.json` points to `../copilot/hooks.json`
 - re-install replaces wrong-target or broken symlinks
 - conflicting regular files/directories are backed up before replacement
+- `install("copilot", packageRoot)` invokes `copilot plugin install <packageRoot>/.copilot-plugin`
+
+Keep wrapper-manifest/package-layout ownership in `copilot-plugin-compat.test.ts`, but move install-path and symlink-refresh ownership into `install.test.ts`.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm test -- src/__tests__/copilot-plugin-compat.test.ts
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run test:integration -- src/__tests__/install.test.ts
 ```
 
 Expected: FAIL because the current install path targets the package root and does not prepare `.copilot-plugin`.
@@ -152,7 +169,7 @@ copilot plugin install <packageRoot>/.copilot-plugin
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm test -- src/__tests__/copilot-plugin-compat.test.ts
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run test:integration -- src/__tests__/install.test.ts
 ```
 
 Expected: PASS on install-target and symlink-refresh assertions.
@@ -160,7 +177,7 @@ Expected: PASS on install-target and symlink-refresh assertions.
 - [ ] **Step 5: Commit the install-wrapper change**
 
 ```bash
-git add freefsm/src/commands/install.ts freefsm/src/__tests__/copilot-plugin-compat.test.ts
+git add freefsm/src/commands/install.ts freefsm/src/__tests__/install.test.ts freefsm/src/__tests__/copilot-plugin-compat.test.ts
 git commit -m "refactor: install Copilot through wrapper symlinks"
 ```
 
@@ -172,6 +189,8 @@ git commit -m "refactor: install Copilot through wrapper symlinks"
 - Modify: `freefsm/src/cli.ts`
 - Modify: `freefsm/copilot/hooks.json`
 - Modify: `freefsm/src/__tests__/copilot-plugin-compat.test.ts`
+- Modify: `freefsm/src/__tests__/copilot-hooks.test.ts`
+- Modify: `freefsm/src/__tests__/integration.test.ts`
 - Reference: `freefsm/src/hooks/post-tool-use.ts`, `freefsm/src/copilot-hooks/pre-tool-use.ts`
 
 - [ ] **Step 1: Write failing tests for CLI hook dispatch**
@@ -188,13 +207,14 @@ Add tests that assert:
 ```
 
 - the CLI exposes a hidden `_hook pre-tool-use` path that reaches the Copilot pre-tool-use handler
+- Commander registration is actually wired, not just the underlying module tests
 
 - [ ] **Step 2: Run the focused tests to verify failure**
 
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm test -- src/__tests__/copilot-plugin-compat.test.ts src/__tests__/copilot-hooks.test.ts
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm test -- src/__tests__/copilot-plugin-compat.test.ts src/__tests__/copilot-hooks.test.ts src/__tests__/integration.test.ts
 ```
 
 Expected: FAIL because the current Copilot hooks still target the direct `dist/copilot-hooks/pre-tool-use.js` entrypoint and the CLI lacks the hidden pre-tool-use subcommand.
@@ -215,7 +235,7 @@ and make `freefsm/copilot/hooks.json` invoke the new CLI path instead of `node .
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm test -- src/__tests__/copilot-plugin-compat.test.ts src/__tests__/copilot-hooks.test.ts
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm test -- src/__tests__/copilot-plugin-compat.test.ts src/__tests__/copilot-hooks.test.ts src/__tests__/integration.test.ts
 ```
 
 Expected: PASS with the new CLI-based hook entry path.
@@ -223,7 +243,7 @@ Expected: PASS with the new CLI-based hook entry path.
 - [ ] **Step 5: Commit the hook-entry unification**
 
 ```bash
-git add freefsm/src/cli.ts freefsm/copilot/hooks.json freefsm/src/__tests__/copilot-plugin-compat.test.ts freefsm/src/__tests__/copilot-hooks.test.ts
+git add freefsm/src/cli.ts freefsm/copilot/hooks.json freefsm/src/__tests__/copilot-plugin-compat.test.ts freefsm/src/__tests__/copilot-hooks.test.ts freefsm/src/__tests__/integration.test.ts
 git commit -m "refactor: route Copilot hook through freefsm CLI"
 ```
 
@@ -241,7 +261,11 @@ Update the real Copilot e2e to assert:
 - the loaded plugin still exposes the expected Copilot skills
 - the preToolUse reminder still fires after the wrapper migration
 
-Add README assertions mentally against the new design: no root-level Copilot manifest language, no direct-file hook entry language.
+Add an explicit README checklist:
+
+- Copilot install target is described as `.copilot-plugin`
+- Copilot hook entry is described through `freefsm _hook pre-tool-use`, not a direct JS file
+- Copilot packaging metadata is not described as rooted at `freefsm/plugin.json`
 
 - [ ] **Step 2: Run the e2e test to confirm the current path is stale**
 
@@ -267,7 +291,7 @@ Do not broaden scope into slash-command UX promises; keep docs to the verified w
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run build && npm test && npm run check && FREEFSM_RUN_COPILOT_E2E=1 FREEFSM_COPILOT_E2E_MODEL=gpt-5-mini npm run test:integration -- src/__tests__/copilot-e2e.test.ts
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run build && npm test && npm run check && npm test && FREEFSM_RUN_COPILOT_E2E=1 FREEFSM_COPILOT_E2E_MODEL=gpt-5-mini npm run test:integration -- src/__tests__/copilot-e2e.test.ts
 ```
 
 Expected:
@@ -275,6 +299,7 @@ Expected:
 - `tsc` succeeds
 - unit tests pass
 - Biome check passes
+- the post-check unit test rerun is still green in case `npm run check` rewrites files
 - real Copilot e2e passes through `.copilot-plugin`
 
 - [ ] **Step 5: Commit the verification and docs update**
@@ -305,18 +330,28 @@ Expected: only the wrapper-migration, CLI hook-entry, test, and docs files descr
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run build && npm test
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run build && npm test && npm run check && npm test && FREEFSM_RUN_COPILOT_E2E=1 FREEFSM_COPILOT_E2E_MODEL=gpt-5-mini npm run test:integration -- src/__tests__/copilot-e2e.test.ts
 ```
 
-Expected: PASS with no new regressions.
+Expected: PASS with no new regressions, including the wrapper/hook/e2e gates.
 
-- [ ] **Step 3: Push the branch**
+- [ ] **Step 3: Confirm no verification-generated edits remain**
+
+Run:
+
+```bash
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev && git status --short
+```
+
+Expected: no unexpected edits caused by `npm run check` or test fixtures.
+
+- [ ] **Step 4: Push the branch**
 
 ```bash
 cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev && git push fork HEAD
 ```
 
-- [ ] **Step 4: Record the resulting head commit for handoff**
+- [ ] **Step 5: Record the resulting head commit for handoff**
 
 Run:
 

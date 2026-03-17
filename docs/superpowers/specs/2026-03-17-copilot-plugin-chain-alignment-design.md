@@ -170,6 +170,24 @@ More concretely, the Copilot hook config should remain Copilot-native while stan
 - `bash: "freefsm _hook pre-tool-use"`
 - `powershell: "freefsm _hook pre-tool-use"`
 
+Minimal shape:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "freefsm _hook pre-tool-use",
+        "powershell": "freefsm _hook pre-tool-use",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}
+```
+
 The design goal is to forbid the older direct-entry style such as `node ./dist/copilot-hooks/pre-tool-use.js` as the installed hook command.
 
 This makes the hook entry structure match Claude’s established pattern:
@@ -252,8 +270,8 @@ This design is successfully implemented when:
 5. Copilot hooks are loaded through `.copilot-plugin/hooks.json`.
 6. `.copilot-plugin/plugin.json` uses wrapper-local manifest paths (`skills`, `hooks.json`) and the published package contains that manifest.
 7. Copilot hook runtime entry is `freefsm _hook pre-tool-use`, expressed through Copilot’s native `bash` / `powershell` hook fields.
-7. Copilot skills still drive the `freefsm` CLI rather than bypassing it.
-8. Real Copilot e2e still passes after the wrapper migration.
+8. Copilot skills still drive the `freefsm` CLI rather than bypassing it.
+9. Real Copilot e2e still passes after the wrapper migration.
 
 ## Risks and Mitigations
 

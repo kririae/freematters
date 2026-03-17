@@ -108,19 +108,19 @@ These files continue to define the intended FreeFSM behavior.
 
 Keep Copilot-specific copies under:
 
-- `freefsm/copilot/skills/freefsm-create/SKILL.md`
-- `freefsm/copilot/skills/freefsm-start/SKILL.md`
-- `freefsm/copilot/skills/freefsm-current/SKILL.md`
-- `freefsm/copilot/skills/freefsm-finish/SKILL.md`
+- `freefsm/copilot/skills/create/SKILL.md`
+- `freefsm/copilot/skills/start/SKILL.md`
+- `freefsm/copilot/skills/current/SKILL.md`
+- `freefsm/copilot/skills/finish/SKILL.md`
 
 Each of these should be manually updated to match its canonical counterpart, except for required naming substitutions.
 
 The Copilot skill set must stay in 1:1 parity with the canonical skill set for this feature:
 
-- `create` ↔ `freefsm-create`
-- `start` ↔ `freefsm-start`
-- `current` ↔ `freefsm-current`
-- `finish` ↔ `freefsm-finish`
+- `create` ↔ `create`
+- `start` ↔ `start`
+- `current` ↔ `current`
+- `finish` ↔ `finish`
 
 Missing, renamed, or extra Copilot skills should be treated as a regression.
 
@@ -128,14 +128,10 @@ Missing, renamed, or extra Copilot skills should be treated as a regression.
 
 The allowed substitutions are:
 
-- `name: freefsm:create` → `name: freefsm-create`
-- `name: freefsm:start` → `name: freefsm-start`
-- `name: freefsm:current` → `name: freefsm-current`
-- `name: freefsm:finish` → `name: freefsm-finish`
-- `/freefsm:create` → `/freefsm-create`
-- `/freefsm:start` → `/freefsm-start`
-- `/freefsm:current` → `/freefsm-current`
-- `/freefsm:finish` → `/freefsm-finish`
+- `name: freefsm:create` → `name: create`
+- `name: freefsm:start` → `name: start`
+- `name: freefsm:current` → `name: current`
+- `name: freefsm:finish` → `name: finish`
 
 No other intentional content simplification should remain in the Copilot copies.
 
@@ -145,14 +141,10 @@ The alignment test should compare each Copilot skill against its canonical count
 
 Normalization should convert:
 
-- `name: freefsm-create` → `name: freefsm:create`
-- `name: freefsm-start` → `name: freefsm:start`
-- `name: freefsm-current` → `name: freefsm:current`
-- `name: freefsm-finish` → `name: freefsm:finish`
-- `/freefsm-create` → `/freefsm:create`
-- `/freefsm-start` → `/freefsm:start`
-- `/freefsm-current` → `/freefsm:current`
-- `/freefsm-finish` → `/freefsm:finish`
+- `name: create` → `name: freefsm:create`
+- `name: start` → `name: freefsm:start`
+- `name: current` → `name: freefsm:current`
+- `name: finish` → `name: freefsm:finish`
 
 After normalization, the Copilot file content should match the canonical file content exactly.
 

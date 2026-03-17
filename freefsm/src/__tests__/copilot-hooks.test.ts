@@ -153,6 +153,40 @@ describe("copilot hook payload parsing and classification", () => {
       },
     },
     {
+      name: "rtk-prefixed start command",
+      payload: rawPayload({
+        toolName: "bash",
+        toolInput: {
+          command:
+            'rtk freefsm start workflow.yaml --run-id run-rtk --root "/tmp/root"',
+        },
+      }),
+      expected: {
+        kind: "freefsm-start",
+        counted: false,
+        runId: "run-rtk",
+        rootDir: "/tmp/root",
+      },
+    },
+    {
+      name: "rtk-prefixed goto command",
+      payload: rawPayload({
+        toolName: "bash",
+        toolInput: {
+          command: "rtk freefsm goto done --run-id run-1 --on next --root /tmp/root",
+        },
+      }),
+      expected: { kind: "freefsm-reset", counted: false, action: "goto" },
+    },
+    {
+      name: "rtk-prefixed finish command",
+      payload: rawPayload({
+        toolName: "bash",
+        toolInput: { command: "rtk freefsm finish --run-id run-1 --root /tmp/root" },
+      }),
+      expected: { kind: "freefsm-reset", counted: false, action: "finish" },
+    },
+    {
       name: "current command",
       payload: rawPayload({
         toolName: "bash",

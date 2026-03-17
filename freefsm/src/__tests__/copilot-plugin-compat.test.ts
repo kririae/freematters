@@ -265,10 +265,7 @@ describe("copilot plugin compatibility", () => {
         join(canonicalSkillsDir, skill, "SKILL.md"),
         "utf-8",
       );
-      const copilot = readFileSync(
-        join(copilotSkillsDir, skill, "SKILL.md"),
-        "utf-8",
-      );
+      const copilot = readFileSync(join(copilotSkillsDir, skill, "SKILL.md"), "utf-8");
 
       // Copilot name field should be the plain skill name
       const copilotNameMatch = copilot.match(/^name:\s+(.+)$/m);

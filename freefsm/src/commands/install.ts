@@ -310,9 +310,7 @@ function installCopilot(packageRoot: string): void {
   run("copilot", ["plugin", "install", wrapperDir]);
 
   console.log("\nFreeFSM plugin installed for Copilot CLI.");
-  console.log(
-    "\nSkills: /create, /start, /current, /finish",
-  );
+  console.log("\nSkills: /create, /start, /current, /finish");
   console.log("Hook: preToolUse Copilot plugin hook");
   console.log("\nRestart or reload the Copilot CLI to activate the plugin.");
 }

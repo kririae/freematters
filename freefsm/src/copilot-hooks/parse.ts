@@ -192,31 +192,41 @@ function resolveRoot(flagRoot?: string): string {
   return join(homedir(), ".freefsm");
 }
 
-function isFreefsmSubcommand(tokens: string[], subcommand: string): boolean {
-  return (
-    tokens.length >= 2 && isFreefsmExecutable(tokens[0]) && tokens[1] === subcommand
-  );
+// Find the freefsm executable in tokens and return the index of its subcommand.
+// Handles prefixed invocations like `rtk freefsm start ...`.
+function findFreefsmSubcommandIndex(tokens: string[]): number {
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (isFreefsmExecutable(tokens[i])) {
+      return i + 1;
+    }
+  }
+  return -1;
 }
 
 export function classifyToolCall(input: ParsedHookPayload): ToolClassification {
   if (input.toolName === "bash") {
     const tokens = tokenizeShellCommand(extractBashCommand(input));
+    const subIdx = findFreefsmSubcommandIndex(tokens);
 
-    if (isFreefsmSubcommand(tokens, "start")) {
-      return {
-        kind: "freefsm-start",
-        counted: false,
-        runId: extractFlag(tokens, "--run-id"),
-        rootDir: resolveRoot(extractFlag(tokens, "--root")),
-      };
-    }
+    if (subIdx >= 0) {
+      const subcommand = tokens[subIdx];
 
-    if (isFreefsmSubcommand(tokens, "goto")) {
-      return { kind: "freefsm-reset", counted: false, action: "goto" };
-    }
+      if (subcommand === "start") {
+        return {
+          kind: "freefsm-start",
+          counted: false,
+          runId: extractFlag(tokens, "--run-id"),
+          rootDir: resolveRoot(extractFlag(tokens, "--root")),
+        };
+      }
 
-    if (isFreefsmSubcommand(tokens, "finish")) {
-      return { kind: "freefsm-reset", counted: false, action: "finish" };
+      if (subcommand === "goto") {
+        return { kind: "freefsm-reset", counted: false, action: "goto" };
+      }
+
+      if (subcommand === "finish") {
+        return { kind: "freefsm-reset", counted: false, action: "finish" };
+      }
     }
   }
 

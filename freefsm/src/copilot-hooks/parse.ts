@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { homedir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { type BindingKey, bindingKeyFor } from "./bindings.js";
 
 export interface ParsedHookPayload {
@@ -183,6 +184,18 @@ function extractFlag(tokens: string[], name: string): string | undefined {
   return undefined;
 }
 
+function resolveRoot(flagRoot?: string): string {
+  if (flagRoot) {
+    return resolve(flagRoot);
+  }
+
+  if (process.env.FREEFSM_ROOT) {
+    return resolve(process.env.FREEFSM_ROOT);
+  }
+
+  return join(homedir(), ".freefsm");
+}
+
 function isFreefsmSubcommand(tokens: string[], subcommand: string): boolean {
   return (
     tokens.length >= 2 && isFreefsmExecutable(tokens[0]) && tokens[1] === subcommand
@@ -198,7 +211,7 @@ export function classifyToolCall(input: ParsedHookPayload): ToolClassification {
         kind: "freefsm-start",
         counted: false,
         runId: extractFlag(tokens, "--run-id"),
-        rootDir: extractFlag(tokens, "--root"),
+        rootDir: resolveRoot(extractFlag(tokens, "--root")),
       };
     }
 

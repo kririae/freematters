@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -543,6 +543,51 @@ describe("pre-tool-use decisions", () => {
         gatedToolCount: 7,
         updatedAt: FIXED_NOW,
       });
+    }
+  });
+
+  test("freefsm start without --root still creates a binding for the documented skill command", async () => {
+    const { parseHookPayload } = await loadParseModule();
+    const { bindingKeyFor, loadBinding } = await loadBindingsModule();
+    const { evaluatePreToolUse } = await loadPreToolUseModule();
+    const stateDir = makeTempDir("freefsm-copilot-rootless-start-");
+    const key = bindingKeyFor({ sessionId: "session-1", cwd: "/workspace/project" });
+
+    const originalRoot = process.env.FREEFSM_ROOT;
+    Reflect.deleteProperty(process.env, "FREEFSM_ROOT");
+
+    try {
+      expect(
+        evaluatePreToolUse(
+          parseHookPayload(
+            rawPayload({
+              toolName: "bash",
+              toolInput: {
+                command: "freefsm start workflow.yaml --run-id run-docs",
+              },
+            }),
+          ),
+          {
+            stateDir,
+            now: () => FIXED_NOW,
+            refreshRun: () => {
+              throw new Error("refresh should not run for freefsm start");
+            },
+          },
+        ),
+      ).toEqual({ kind: "allow" });
+
+      expect(loadBinding(stateDir, key)).toMatchObject({
+        runId: "run-docs",
+        rootDir: join(homedir(), ".freefsm"),
+        gatedToolCount: 0,
+      });
+    } finally {
+      if (originalRoot === undefined) {
+        Reflect.deleteProperty(process.env, "FREEFSM_ROOT");
+      } else {
+        process.env.FREEFSM_ROOT = originalRoot;
+      }
     }
   });
 

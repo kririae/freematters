@@ -113,6 +113,19 @@ Runtime-created local symlinks:
 
 The wrapper directory should stay thin. It exists to satisfy Copilot’s plugin-root expectations, not to duplicate runtime logic.
 
+### Wrapper manifest contract
+
+`.copilot-plugin/plugin.json` must be fully wrapper-local:
+
+- `"skills": ["skills"]`
+- `"hooks": "hooks.json"`
+
+It must not point outside the wrapper using `../...` paths, because Copilot rejects paths that escape the plugin directory.
+
+### Published package contract
+
+The published package must include `.copilot-plugin/plugin.json`, because `freefsm install copilot` will install from the packaged filesystem layout and then create the wrapper symlinks locally.
+
 ## Install Design
 
 ### `freefsm install copilot`
@@ -133,6 +146,12 @@ copilot plugin install <packageRoot>/.copilot-plugin
 ### Install behavior boundaries
 
 - The install command may create or refresh the symlinks required by the wrapper.
+- The install command should reuse the existing safe link-replacement behavior already used elsewhere in FreeFSM install logic:
+  - replace correct or broken symlinks in place
+  - back up conflicting regular files or directories before replacing them
+  - recreate wrong-target symlinks so the wrapper always points at the intended paths
+- If required wrapper targets are missing, install should fail explicitly rather than silently proceeding with a broken wrapper.
+- If the local platform cannot create the required links, install should fail explicitly with a clear platform error instead of falling back to a different packaging shape in this step.
 - It should otherwise stay thin and avoid large amounts of Copilot-specific preflight logic.
 - It should not move Copilot packaging metadata back to the package root.
 
@@ -142,9 +161,16 @@ Copilot should no longer execute a hook implementation file directly as the prim
 
 Instead:
 
-- `.copilot-plugin/hooks.json` should point to `freefsm _hook pre-tool-use`
+- `.copilot-plugin/hooks.json` should use Copilot’s command-hook schema and point to `freefsm _hook pre-tool-use`
 - `freefsm` CLI should expose a hidden `_hook pre-tool-use` subcommand
 - that subcommand should delegate into the Copilot hook implementation module
+
+More concretely, the Copilot hook config should remain Copilot-native while standardizing the runtime entry:
+
+- `bash: "freefsm _hook pre-tool-use"`
+- `powershell: "freefsm _hook pre-tool-use"`
+
+The design goal is to forbid the older direct-entry style such as `node ./dist/copilot-hooks/pre-tool-use.js` as the installed hook command.
 
 This makes the hook entry structure match Claude’s established pattern:
 
@@ -189,6 +215,8 @@ Add or update tests to prove:
 - `.copilot-plugin` can be used as the plugin install target
 - the symlinks created by `freefsm install copilot` point to the intended targets
 - re-running install refreshes the wrapper safely
+- conflicting existing files/directories are handled by the documented replacement/back-up behavior
+- the packaged filesystem includes `.copilot-plugin/plugin.json`
 
 ### 2. Hook entry test
 
@@ -222,7 +250,8 @@ This design is successfully implemented when:
 3. `freefsm install copilot` creates or refreshes the symlinks required by `.copilot-plugin`.
 4. Copilot skills are loaded through `.copilot-plugin/skills`.
 5. Copilot hooks are loaded through `.copilot-plugin/hooks.json`.
-6. Copilot hook runtime entry is `freefsm _hook pre-tool-use`.
+6. `.copilot-plugin/plugin.json` uses wrapper-local manifest paths (`skills`, `hooks.json`) and the published package contains that manifest.
+7. Copilot hook runtime entry is `freefsm _hook pre-tool-use`, expressed through Copilot’s native `bash` / `powershell` hook fields.
 7. Copilot skills still drive the `freefsm` CLI rather than bypassing it.
 8. Real Copilot e2e still passes after the wrapper migration.
 

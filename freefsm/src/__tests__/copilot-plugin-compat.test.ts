@@ -171,7 +171,7 @@ describe("copilot plugin compatibility", () => {
     expect(output).toContain("freefsm:create");
   });
 
-  test('uses wrapper-local copilot manifest and package includes it', () => {
+  test('uses wrapper-local copilot manifest and package includes it', async () => {
     const wrapperPath = join(PACKAGE_ROOT, '.copilot-plugin', 'plugin.json');
     expect(existsSync(wrapperPath)).toBe(true);
 
@@ -191,19 +191,21 @@ describe("copilot plugin compatibility", () => {
 
     expect(pkg.files).toContain('.copilot-plugin/');
 
+    // Use the real child_process implementation for pack/tar to avoid mocking interference
+    const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+    const realExec = actual.execFileSync;
+
     // create an npm pack (ignore scripts to avoid build) and inspect the produced tarball
-    execFileSync('npm', ['pack', '--silent', '--ignore-scripts'], { cwd: PACKAGE_ROOT });
+    realExec('npm', ['pack', '--silent', '--ignore-scripts'], { cwd: PACKAGE_ROOT });
 
     const pkgMeta = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8')) as { name: string; version: string };
     const tarballName = `${pkgMeta.name.replace('@', '').replace('/', '-')}-${pkgMeta.version}.tgz`;
     const tarballPath = join(PACKAGE_ROOT, tarballName);
 
-    const tarContent = readFileSync(tarballPath);
+    const list = realExec('tar', ['-tf', tarballPath], { cwd: PACKAGE_ROOT }).toString();
 
-    const tarText = tarContent.toString('utf-8');
-
-    expect(tarText).toContain('package/.copilot-plugin/plugin.json');
-    expect(tarText).not.toContain('package/plugin.json');
+    expect(list).toContain('package/.copilot-plugin/plugin.json');
+    expect(list).not.toContain('package/plugin.json');
 
     rmSync(tarballPath);
 

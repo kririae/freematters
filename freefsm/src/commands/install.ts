@@ -17,8 +17,8 @@ type Platform = "claude" | "codex" | "copilot";
 
 const MARKETPLACE_NAME = "freefsm-local";
 const PLUGIN_NAME = "freefsm";
-const COPILOT_PLUGIN_MANIFEST = "plugin.json";
-const COPILOT_HOOKS_CONFIG = "copilot/hooks.json";
+const COPILOT_PLUGIN_MANIFEST = ".copilot-plugin/plugin.json";
+const COPILOT_HOOKS_CONFIG = "hooks.json";
 const COPILOT_SKILL_NAME = /^[a-z0-9-]+$/;
 
 type CopilotPluginManifest = {
@@ -105,7 +105,7 @@ function extractSkillName(skillSource: string): string | null {
 }
 
 function validateCopilotSkills(
-  packageRoot: string,
+  manifestDir: string,
   pluginManifest: CopilotPluginManifest,
 ): void {
   const skillDirs = asStringArray(pluginManifest.skills);
@@ -119,7 +119,7 @@ function validateCopilotSkills(
   const errors: string[] = [];
 
   for (const skillDirPath of skillDirs) {
-    const skillsSource = join(packageRoot, skillDirPath);
+    const skillsSource = join(manifestDir, skillDirPath);
 
     if (!existsSync(skillsSource)) {
       errors.push(`Copilot skills directory not found: ${skillsSource}`);
@@ -211,22 +211,36 @@ function extractCopilotHookEntrypoints(
 }
 
 function validateCopilotPluginAssets(packageRoot: string): void {
-  const pluginManifestPath = join(packageRoot, COPILOT_PLUGIN_MANIFEST);
+  let pluginManifestPath = join(packageRoot, COPILOT_PLUGIN_MANIFEST);
+  let usedWrapper = true;
+
+  if (!existsSync(pluginManifestPath)) {
+    // Backwards compatibility: fall back to root-level plugin.json if wrapper missing
+    const fallback = join(packageRoot, 'plugin.json');
+    if (existsSync(fallback)) {
+      pluginManifestPath = fallback;
+      usedWrapper = false;
+    }
+  }
+
+  const manifestDir = dirname(pluginManifestPath);
 
   const pluginManifest = readJsonFile<CopilotPluginManifest>(
     pluginManifestPath,
     "Copilot plugin manifest not found",
   );
 
-  validateCopilotSkills(packageRoot, pluginManifest);
+  validateCopilotSkills(manifestDir, pluginManifest);
 
-  if (pluginManifest.hooks !== COPILOT_HOOKS_CONFIG) {
+  const expectedHooks = usedWrapper ? COPILOT_HOOKS_CONFIG : 'copilot/hooks.json';
+
+  if (pluginManifest.hooks !== expectedHooks) {
     failInstall(
-      `plugin.json must set "hooks" to "${COPILOT_HOOKS_CONFIG}" for Copilot installation.`,
+      `plugin.json must set "hooks" to "${expectedHooks}" for Copilot installation.`,
     );
   }
 
-  const hooksConfigPath = join(packageRoot, pluginManifest.hooks);
+  const hooksConfigPath = join(manifestDir, pluginManifest.hooks as string);
   const hooksConfig = readJsonFile<CopilotHooksConfig>(
     hooksConfigPath,
     "Copilot hooks config not found",

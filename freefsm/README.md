@@ -36,6 +36,11 @@ freefsm install codex
 freefsm install copilot
 ```
 
+For Copilot, `freefsm install copilot` prepares a thin `.copilot-plugin/` wrapper,
+links `.copilot-plugin/skills` to `copilot/skills`, links `.copilot-plugin/hooks.json`
+to `copilot/hooks.json`, and installs that wrapper with `copilot plugin install`.
+The Copilot hook entry stays on the CLI surface via `freefsm _hook pre-tool-use`.
+
 ### For Contributors
 
 ```bash
@@ -99,7 +104,7 @@ The runtime works through three mechanisms:
 
 1. **Skills** invoke the CLI — `/freefsm:start` loads the YAML, validates the schema, and enters the initial state. The agent sees a state card with the current prompt and available transitions.
 2. **CLI enforces transitions** — when the agent calls `freefsm goto feedback --on found_issues`, the CLI validates the transition against the YAML before committing it. Illegal transitions are rejected.
-3. **Hooks inject reminders** — a PostToolUse hook runs `freefsm current` every 5 tool calls, re-injecting the current state card into the agent's context. This counteracts context drift in long conversations.
+3. **Hooks inject reminders** — Claude uses `freefsm _hook post-tool-use` to re-inject the current state card every 5 tool calls. Copilot installs a `preToolUse` hook that runs `freefsm _hook pre-tool-use` and denies every 10 counted `bash` / `view` tool calls with the current-state reminder. Both paths keep the hook runtime on the `freefsm` CLI surface.
 
 All state changes are recorded as an append-only event log (JSONL), with a snapshot for fast reads. Runs are isolated by ID with directory-based file locking for concurrent safety.
 

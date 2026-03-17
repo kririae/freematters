@@ -3,11 +3,14 @@ import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +19,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const CLI = resolve(__dirname, "../../dist/cli.js");
+const PACKAGE_ROOT = resolve(__dirname, "../..");
 const SHOULD_RUN = process.env.FREEFSM_RUN_COPILOT_E2E === "1";
 const TEST_MODEL = process.env.FREEFSM_COPILOT_E2E_MODEL ?? "gpt-5-mini";
 const execFile = promisify(execFileCallback);
@@ -150,6 +154,65 @@ function readArtifacts(sharePath: string, logDir: string): string {
   return parts.join("\n---\n");
 }
 
+function collectFileContents(rootDir: string): string {
+  if (!existsSync(rootDir)) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
+    const fullPath = join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      parts.push(collectFileContents(fullPath));
+      continue;
+    }
+    parts.push(readFileSync(fullPath, "utf-8"));
+  }
+
+  return parts.filter(Boolean).join("\n---\n");
+}
+
+type SymlinkSnapshot = {
+  existed: boolean;
+  isSymlink: boolean;
+  target?: string;
+};
+
+function snapshotSymlink(path: string): SymlinkSnapshot {
+  if (!existsSync(path)) {
+    return { existed: false, isSymlink: false };
+  }
+
+  const stat = lstatSync(path);
+  if (!stat.isSymbolicLink()) {
+    return { existed: true, isSymlink: false };
+  }
+
+  return {
+    existed: true,
+    isSymlink: true,
+    target: readlinkSync(path),
+  };
+}
+
+function restoreSymlink(path: string, snapshot: SymlinkSnapshot): void {
+  if (!snapshot.existed) {
+    if (existsSync(path)) {
+      rmSync(path, { force: true });
+    }
+    return;
+  }
+
+  if (!snapshot.isSymlink || !snapshot.target) {
+    return;
+  }
+
+  if (!existsSync(path) || readlinkSync(path) !== snapshot.target) {
+    rmSync(path, { force: true });
+    symlinkSync(snapshot.target, path);
+  }
+}
+
 const describeCopilotE2E = describe.skipIf(!SHOULD_RUN || !hasCommand("copilot"));
 
 describeCopilotE2E("copilot e2e automation", () => {
@@ -162,6 +225,10 @@ describeCopilotE2E("copilot e2e automation", () => {
   let sharePath: string;
   let logDir: string;
   let traceFile: string;
+  let wrapperSkillsSnapshot: SymlinkSnapshot;
+  let wrapperHooksSnapshot: SymlinkSnapshot;
+  const wrapperSkillsPath = join(PACKAGE_ROOT, ".copilot-plugin", "skills");
+  const wrapperHooksPath = join(PACKAGE_ROOT, ".copilot-plugin", "hooks.json");
 
   beforeAll(() => {
     tmpHome = mkdtempSync(join(tmpdir(), "freefsm-copilot-e2e-"));
@@ -182,9 +249,13 @@ describeCopilotE2E("copilot e2e automation", () => {
 
     writeFreefsmWrapper(tmpBin);
     writeWorkflow(workflowPath);
+    wrapperSkillsSnapshot = snapshotSymlink(wrapperSkillsPath);
+    wrapperHooksSnapshot = snapshotSymlink(wrapperHooksPath);
   });
 
   afterAll(() => {
+    restoreSymlink(wrapperSkillsPath, wrapperSkillsSnapshot);
+    restoreSymlink(wrapperHooksPath, wrapperHooksSnapshot);
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
@@ -199,6 +270,11 @@ describeCopilotE2E("copilot e2e automation", () => {
 
     const installOut = run("node", [CLI, "install", "copilot"], { env });
     expect(installOut).toContain("FreeFSM plugin installed for Copilot CLI.");
+    expect(installOut).toContain(join(PACKAGE_ROOT, ".copilot-plugin"));
+    expect(lstatSync(wrapperSkillsPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(wrapperSkillsPath)).toBe("../copilot/skills");
+    expect(lstatSync(wrapperHooksPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(wrapperHooksPath)).toBe("../copilot/hooks.json");
 
     const pluginList = run(
       "copilot",
@@ -264,6 +340,7 @@ describeCopilotE2E("copilot e2e automation", () => {
       "Denied by preToolUse hook: [FSM plan] Plan the work. Next: next → done.",
     );
     expect(combinedOutput).toContain("DONE");
+    expect(collectFileContents(tmpConfigDir)).toContain("freefsm _hook pre-tool-use");
 
     const snapshot = JSON.parse(
       readFileSync(join(rootDir, "runs", "e2e-run", "snapshot.json"), "utf-8"),

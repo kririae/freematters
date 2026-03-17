@@ -1,196 +1,273 @@
-# FreeFSM Copilot CLI Extension Design
+# FreeFSM Copilot CLI Plugin Design
 
-> Add Copilot CLI support to freefsm via the extension system, reusing existing skills and CLI.
+> Supersedes the earlier SDK-extension design. Copilot CLI support must be implemented as a real plugin (`plugin.json` + `hooks.json`), not as a standalone `extension.mjs` process.
 
 ## Problem
 
-FreeFSM is designed primarily for Claude Code. It uses Claude Code's plugin system (`hooks.json` for PostToolUse reminders, `SKILL.md` for slash commands). Copilot CLI has a richer extension system (programmatic hooks, custom tools, session events) but freefsm has no integration for it.
+FreeFSM already works well with Claude Code because Claude exposes a hook model that can inject reminder text back into the agent loop. Our original Copilot design assumed Copilot CLI exposed an equivalent long-lived SDK extension process (`joinSession()`, `additionalContext`, `session.log()`), so we added `copilot/extension.mjs` and installed it via `~/.copilot/extensions`.
 
-The goal: bring freefsm's FSM enforcement to Copilot CLI with minimal changes, maximum reuse, and merge-friendliness toward upstream.
+Live verification disproved that assumption:
+
+- `copilot --help` and `copilot plugin --help` expose a **plugin** model, not an `extensions/` loading model.
+- Official docs require a plugin to contain at least `plugin.json`, with hooks registered through `hooks.json`.
+- Official hook docs state that `sessionStart`, `postToolUse`, and `userPromptSubmitted` outputs are ignored; only `preToolUse` can affect agent behavior by returning a deny decision.
+- A/B probes showed that neither `~/.copilot/extensions/freefsm` nor `--plugin-dir <existing-copilot-dir>` causes `extension.mjs` to load.
+- A minimal real-hook experiment showed the practical feedback boundary:
+  - `postToolUse` hooks do run, but hook stdout does **not** appear in the agent transcript.
+  - `preToolUse` deny reasons **do** appear in the transcript verbatim and are visible to the agent.
+  - Real hook payloads include `sessionId`, even though the short docs examples omit it.
+
+So the current Copilot implementation is architecturally invalid even though the TypeScript/JS is syntactically fine.
+
+## Goals
+
+1. Make Copilot CLI support real and supportable by following the documented plugin surface.
+2. Preserve as much of the existing `freefsm` CLI and `skills/` content as possible.
+3. Keep installation ergonomic (`freefsm install copilot`).
+4. Replace the old soft “inject additionalContext every 5 tools” idea with a Copilot-native enforcement mechanism that still drives the agent back into the FSM.
+5. Support automated, default-off e2e verification without touching the real `~/.copilot`.
+
+## Non-Goals
+
+- Preserving the `@github/copilot-sdk/extension` implementation model.
+- Relying on undocumented `session.log()` capture behavior.
+- Achieving perfect Claude parity for “silent reminder injection”; Copilot’s documented hooks do not support it.
+- Building a design that depends solely on undocumented `sessionId` behavior. The implementation should prefer `sessionId` when present and fall back safely when it is absent.
 
 ## Proposed Approach
 
-Create a thin Copilot CLI extension (`extension.mjs`) that provides hook-based FSM enforcement, plus an install command (`freefsm install copilot`) that links both the existing skills and the new extension to the user's Copilot configuration.
+Implement Copilot support as a **plugin rooted at the package root**:
 
-### Key Insight: Skills Are Already Compatible
+- Add `plugin.json` to the `freefsm/` package root.
+- Add a Copilot-specific `copilot/skills/` directory with Copilot-compatible skill names, and point the plugin manifest at it explicitly.
+- Add `copilot/hooks.json` that invokes compiled Node hook scripts from `dist/copilot-hooks/*.js`, and wire it explicitly from the manifest with `"hooks": "copilot/hooks.json"`.
+- Move Copilot hook logic into TypeScript modules under `src/copilot-hooks/`, then compile them into `dist/`.
+- Change `freefsm install copilot` to call `copilot plugin install <package-root>` instead of creating `~/.copilot/extensions` symlinks.
 
-Copilot CLI natively supports `SKILL.md` files with the same format as Claude Code:
+This keeps the package self-contained, lets Copilot manage plugin installation/caching the documented way, and gives us testable Node entrypoints instead of an opaque SDK-only runtime.
 
-- Project level: `.github/skills/` or `.claude/skills/`
-- User level: `~/.copilot/skills/` or `~/.claude/skills/`
+## Key Insight: Copilot Hooks Can Enforce, But Not Inject Context
 
-FreeFSM's existing skills (`/freefsm:start`, `/freefsm:create`, `/freefsm:current`, `/freefsm:finish`) work on Copilot CLI without modification. They just need to be installed to a discoverable location.
+Copilot’s documented hooks are shell-command based:
 
-### What's Actually New
+- `sessionStart`: runs command, ignores output
+- `postToolUse`: runs command, ignores output
+- `preToolUse`: runs command, can deny a tool execution via JSON output
 
-Only the **hook layer** is platform-specific. Claude Code uses `hooks.json` (command-based, stateless per invocation). Copilot CLI uses extensions (long-lived process, programmatic hooks via `@github/copilot-sdk`).
+That means the old design’s “return `{ additionalContext: reminder }` every 5 tool calls” is not available on the supported surface.
+
+The approved replacement design is intentionally lightweight:
+
+1. `preToolUse` is both the bookkeeping hook and the only agent-facing reminder channel.
+2. Only `bash` and `view` are counted and denied; `edit`/`create` remain untouched to avoid expensive interruption.
+3. Every 10th counted `bash`/`view` call, `preToolUse` runs `freefsm current` itself, compresses the result, denies only that triggering call, then immediately resets the counter.
+4. There is **no unlock step**. The deny is a one-shot reminder, not a sticky gate.
+
+This is weaker than a sticky enforcement loop, but it matches the user's priority: frequent reminders with minimal agent penalty.
 
 ## Architecture
 
-```
+```text
 freefsm/
-  copilot/                        ← NEW: Copilot CLI extension
-    extension.mjs                 ← Extension entry point (ES module)
-  skills/                         ← EXISTING: works on both Claude Code and Copilot CLI
-    start/SKILL.md
+  plugin.json                    ← NEW: Copilot plugin manifest at package root
+  skills/                        ← EXISTING: shared by Claude/Codex
     create/SKILL.md
     current/SKILL.md
     finish/SKILL.md
-  hooks/                          ← EXISTING: Claude Code only
-    hooks.json
+    start/SKILL.md
+  copilot/
+    skills/                      ← NEW: Copilot-only skill wrappers
+      freefsm-create/SKILL.md
+      freefsm-current/SKILL.md
+      freefsm-finish/SKILL.md
+      freefsm-start/SKILL.md
+    hooks.json                   ← NEW: Copilot hook registration
   src/
+    copilot-hooks/               ← NEW: TypeScript hook implementation
+      bindings.ts                ← persisted session/workspace binding + gated-tool counter
+      reminder.ts                ← formats state reminder from `freefsm current -j`
+      parse.ts                   ← extracts run/root/command intent from tool args
+      trace.ts                   ← default-off e2e trace file helper
+      pre-tool-use.ts            ← optimistic bookkeeping + deny decision logic
     commands/
-      install.ts                  ← MODIFIED: add "copilot" platform
-    cli.ts                        ← MODIFIED: accept "copilot" in install command
-  package.json                    ← MODIFIED: add "copilot/" to files array
+      install.ts                 ← MODIFIED: plugin install flow for Copilot
+    __tests__/
+      install.test.ts            ← MODIFIED: install command expectations
+      copilot-hooks.test.ts      ← NEW: pure unit tests for hook logic
+      copilot-e2e.test.ts        ← NEW/UPDATED: real Copilot plugin e2e
+  dist/
+    copilot-hooks/*.js           ← compiled hook entrypoints used by hooks.json
 ```
 
-### Data Flow
+## Data Model
 
-```
-User invokes /freefsm:start
-  → Copilot loads SKILL.md, agent calls `freefsm start` via Bash
-  → Extension's onPostToolUse detects the command, stores activeRunId
-  → Agent works (Bash, edit, create, etc.)
-  → Every 5 tool calls, onPostToolUse injects state reminder via additionalContext
-  → Agent calls `freefsm goto <state> --on <label>` via Bash
-  → CLI validates transition (hard constraint), returns new state card
-  → Eventually agent reaches `done` state, extension clears activeRunId
-```
+Because real hook payloads include `sessionId`, FreeFSM will persist Copilot tracking state **per session when available**, with a workspace-path fallback for safety.
 
-## Components
+### Binding file
 
-### 1. `copilot/extension.mjs`
+Store a binding under `~/.copilot/state/freefsm/<session-id-or-cwd-hash>.json`:
 
-A Copilot CLI extension using `@github/copilot-sdk/extension`.
-
-#### Hooks
-
-**`onPostToolUse`** — state reminder (core enforcement hook)
-
-Logic (ported from `src/hooks/post-tool-use.ts`, adapted for in-memory model):
-
-1. If `toolName === "bash"`:
-   a. Detect `freefsm start` → extract `run_id` from command flags or tool result, store in `activeRunId`, reset counter to 0
-   b. Detect `freefsm finish` or `freefsm goto done` → clear `activeRunId`, reset counter to 0
-2. If no `activeRunId` → return (nothing to do)
-3. Increment in-memory counter
-4. If `counter % 5 !== 0` → return
-5. Call `freefsm current --run-id <activeRunId> -j` via `execFile`
-6. Parse JSON response, build state reminder text
-7. Return `{ additionalContext: reminder }`
-
-**`onSessionStart`** — cost optimization context injection (user-requested)
-
-Copilot CLI charges per premium request (per model turn). The user explicitly requested strong emphasis on using `ask_user` with structured forms to minimize turn count. This is injected as `additionalContext`:
-
-```
-COPILOT COST OPTIMIZATION: Each model turn costs a premium request. When you
-need user input, ALWAYS use the ask_user tool with requestedSchema (JSON Schema
-forms with enum, boolean, array fields) instead of conversational back-and-forth.
-Batch related questions into a single ask_user call when possible. Prefer
-multiple-choice (enum) and boolean fields over open-ended string fields.
+```json
+{
+  "sessionId": "24967736-fe52-4634-8a00-40f309bcfe9b",
+  "cwd": "/repo/path",
+  "runId": "e2e-run",
+  "rootDir": "/tmp/root",
+  "gatedToolCount": 3,
+  "updatedAt": "2026-03-16T12:34:56.000Z"
+}
 ```
 
-Session resume re-binding of `activeRunId` is out of scope (see Future Work). This hook only fires on fresh session start.
+### Why this is acceptable
 
-#### Differences from Claude Code Hook
+- Hooks run as separate processes, so in-memory state is impossible.
+- Real `preToolUse` / `postToolUse` payloads include `sessionId`, which gives us proper per-session isolation.
+- The workspace path is always present in hook payloads and provides a safe fallback key.
+- FreeFSM already assumes a single “active run” in many agent flows.
+- This is sufficient for the user’s main goal: a lightweight periodic reminder loop in normal single-session usage.
 
-| Aspect | Claude Code (`hooks.json`) | Copilot CLI (`extension.mjs`) |
-|--------|---------------------------|-------------------------------|
-| Process model | Stateless (new process per hook invocation) | Long-lived (extension process = session lifetime) |
-| Counter storage | File (`sessions/<id>.counter`) | In-memory variable |
-| Session binding | File (`sessions/<id>.json`) | In-memory `activeRunId` |
-| Command detection | Parse `tool_input.command` from stdin JSON | Parse `input.toolArgs.command` from hook input |
-| Output mechanism | Write JSON to stdout (`hookSpecificOutput`) | Return `{ additionalContext }` from hook |
-| Hook types available | PostToolUse only | onPostToolUse, onPreToolUse, onSessionStart, onSessionEnd, onErrorOccurred, onUserPromptSubmitted |
+### Known limitation
 
-**Cross-session behavior:** Both platforms behave identically — neither auto-resumes an FSM run across sessions. Claude Code uses file-based session binding because each hook invocation is a separate process; Copilot uses in-memory state because the extension IS the session. In both cases, the agent relies on conversation context to remember the `run_id` and re-engage the workflow. Copilot's `onSessionStart` with `source: "resume"` could enable auto-detection of active runs (via `freefsm list --status active`), but this is deferred to Future Work to maintain parity with Claude Code.
+If `sessionId` ever disappears from runtime payloads, the fallback `cwd` key could allow two Copilot sessions in the same repository to contend for the same binding file. Also, because the design no longer uses `postToolUse`, binding updates are optimistic: a failed `freefsm start` or `finish` command can temporarily leave stale state behind until the next `freefsm current` refresh clears it.
 
-#### No Native Tools Needed
+## Hook Flow
 
-The extension does NOT register custom tools (`fsm_start`, `fsm_goto`, etc.). Rationale:
+### `preToolUse`
 
-- Existing skills already guide the agent to call `freefsm` via Bash
-- The CLI performs transition validation internally (hard constraint)
-- Registering duplicate tools would confuse the agent (Bash CLI vs native tool)
-- This minimizes new code and keeps the extension as a pure hook layer
+Purpose:
 
-### 2. `freefsm install copilot`
+- convert the old “periodic reminder” idea into a low-penalty Copilot-native one-shot reminder
 
-New branch in `src/commands/install.ts` alongside existing `claude` and `codex` platforms.
+Behavior:
 
-#### Behavior
+1. Parse the incoming hook payload.
+2. Load the session/workspace binding (if any) and perform lazy cleanup.
+   - prefer `sessionId`
+   - fall back to `cwd` only if needed
+3. If the binding exists but a quick refresh shows the run is completed/aborted/missing, clear it before any other logic.
+4. If the tool is `bash` running `freefsm start ... --run-id ... --root ...`, optimistically persist `{ sessionId, runId, rootDir, gatedToolCount: 0 }`, then allow.
+5. If the tool is `bash` running `freefsm current`, `freefsm goto`, or `freefsm finish`, optimistically reset `gatedToolCount` to `0`, then allow.
+6. If the tool is neither `bash` nor `view`, allow without touching the counter.
+7. If there is no active binding, allow.
+8. Increment `gatedToolCount`.
+9. If `gatedToolCount < 10`, persist and allow.
+10. On the 10th counted `bash`/`view` call:
+   - run `freefsm current --run-id <runId> --root <rootDir> -j`
+   - if the run is missing/completed/aborted, clear the binding and allow
+   - otherwise compress the current state into a short reminder
+   - deny only this triggering call
+   - immediately reset `gatedToolCount` to `0`
+11. If the refresh fails unexpectedly, deny with a very short fallback reminder and still reset the counter to `0`.
+
+Example output:
+
+```json
+{
+  "permissionDecision": "deny",
+  "permissionDecisionReason": "[FSM plan] Plan the work. Next: next → done."
+}
+```
+
+This gives the agent actionable context using the only supported feedback channel. The real experiment showed this deny reason is surfaced verbatim to the agent transcript, unlike `postToolUse` stdout. Because the hook already executed `freefsm current`, the deny does not require a follow-up unlock command.
+
+## Installation Model
+
+### `freefsm install copilot`
+
+Replace the current symlink-based install with:
 
 ```bash
-$ freefsm install copilot
-Linking skills to ~/.copilot/skills/freefsm/
-Linking extension to ~/.copilot/extensions/freefsm/
-
-FreeFSM installed for Copilot CLI.
-
-Skills: /freefsm:create, /freefsm:start, /freefsm:current, /freefsm:finish
-Hook: PostToolUse state reminder (every 5 tool calls)
-
-Restart Copilot CLI to activate.
+copilot plugin install <package-root>
 ```
 
-#### Implementation
+Implementation details:
 
-Creates two symlinks:
+- resolve `<package-root>` with the existing `getPackageRoot()`
+- validate `plugin.json`, `copilot/hooks.json`, and compiled hook entrypoints exist
+- shell out to `copilot plugin install <package-root>`
+- print a concise summary of what the plugin provides
 
-1. `~/.copilot/skills/freefsm/` → `<package-root>/skills/`
-2. `~/.copilot/extensions/freefsm/` → `<package-root>/copilot/`
+Why this is better:
 
-`<package-root>` is resolved from the running binary's location using the existing `getPackageRoot()` function (based on `import.meta.url`).
+- uses Copilot’s documented installation path
+- allows Copilot to manage cache/state
+- avoids reverse-engineering internal directories like `~/.copilot/extensions`
 
-#### Edge Cases
+## Skills Strategy
 
-| Scenario | Handling |
-|----------|----------|
-| `~/.copilot/` doesn't exist | `mkdirSync({ recursive: true })` |
-| `~/.copilot/skills/` doesn't exist | `mkdirSync({ recursive: true })` |
-| `~/.copilot/extensions/` doesn't exist | `mkdirSync({ recursive: true })` |
-| Target is already a symlink | Remove old symlink, create new (matches `installCodex` behavior) |
-| Target is a real directory | Backup to `.bak`, create symlink (matches `installCodex` behavior) |
-| Package `skills/` missing | Error exit: "Skills directory not found" |
-| Package `copilot/` missing | Error exit: "Copilot extension not found (upgrade freefsm?)" |
-| freefsm running from source (not npm) | Works — `getPackageRoot()` uses file path, not npm metadata |
+Existing `skills/` remain reusable for Claude/Codex. Copilot should instead load `copilot/skills/`, which provides compatible identifiers such as `/freefsm-start` and `/freefsm-current`.
 
-### 3. File Changes Summary
+Because session-start hook output is ignored, Copilot-specific cost guidance can no longer be injected dynamically. The first rework should therefore:
 
-#### `copilot/extension.mjs` (new file)
+- keep the shared Claude/Codex skills unchanged unless testing proves they need tuning
+- add a thin Copilot skill compatibility layer instead of forcing Claude/Codex naming conventions onto Copilot
+- treat “Copilot-specific ask_user emphasis” as optional follow-up work, not part of the architectural repair
 
-~80-120 lines. Imports `@github/copilot-sdk`, `@github/copilot-sdk/extension`, `node:child_process`. Registers `onPostToolUse` and `onSessionStart` hooks. Zero dependencies beyond the SDK (auto-resolved by Copilot CLI runtime).
-
-#### `src/commands/install.ts` (modify)
-
-Add `installCopilot(packageRoot: string)` function (~30 lines) following the existing `installCodex` pattern. Two symlinks + directory creation + user output.
-
-#### `src/cli.ts` (modify)
-
-Change platform validation from `"claude" | "codex"` to `"claude" | "codex" | "copilot"`.
-
-#### `package.json` (modify)
-
-Add `"copilot/"` to the `files` array so it's included in the npm package.
+This keeps the rework focused on the broken compatibility layer first.
 
 ## Testing Strategy
 
-- **Unit tests**: Mock `execFile` to test `onPostToolUse` logic (command detection, counter, reminder generation)
-- **Integration test**: `freefsm install copilot` creates correct symlinks on a temp directory
-- **Manual verification**: Install on a Copilot CLI instance, run a workflow, verify state reminders appear
+### Unit tests
+
+Add pure tests for the new hook helper modules:
+
+- command parsing (`start`, `current`, `goto`, `finish`)
+- real Copilot payload parsing where `toolArgs` arrives as a JSON string
+- binding persistence and cleanup
+- reminder formatting
+- pre-tool deny decisions at threshold
+- stale-run cleanup
+
+### Install tests
+
+Update `install.test.ts` to validate the new behavior:
+
+- `freefsm install copilot` shells out to `copilot plugin install <package-root>`
+- missing `plugin.json` / `hooks.json` / compiled hook scripts produce explicit errors
+
+### E2E
+
+Run the real `copilot` CLI with:
+
+- temp `HOME`
+- temp `--config-dir`
+- low-cost model (`gpt-5-mini` by default)
+- default-off trace env vars enabled only for the test
+
+Validate:
+
+- `freefsm install copilot` installs a plugin that appears in `copilot plugin list`
+- hooks write trace markers when the test explicitly enables tracing
+- `preToolUse` denial text is what the agent actually sees and reacts to
+- a real run started outside Copilot plus a seeded `cwd` fallback binding with `gatedToolCount: 9` triggers a real one-shot deny on the first counted tool call, keeping the test bounded in time/cost
+- `goto done → complete` succeeds in the same real session after the deny
+- no real `~/.copilot` data is touched
+
+The live “10 counted `bash`/`view` calls” cadence remains covered by unit tests; the bounded e2e focuses on validating the real Copilot transcript, hook execution, and end-to-end recovery path.
 
 ## Error Handling
 
-- Extension hooks fail silently (return undefined) — hooks should never break the agent
-- `execFile` errors (freefsm not found, run not found) are caught and ignored in hooks
-- If `freefsm current` returns a non-active run (completed/aborted externally), clear `activeRunId` and reset counter
-- Install command validates source directories exist before creating symlinks
+- Hook scripts must fail open unless they are intentionally returning a deny decision.
+- If a binding references a missing or completed run, clear it immediately.
+- If reminder refresh/formatting fails, deny once with a short fallback reason, then reset the counter.
+- Install must surface missing build artifacts explicitly instead of pretending Copilot support is available.
 
-## Future Work (Not in Scope)
+## Migration Notes
 
-- `onPreToolUse` hook for per-state tool restrictions (`allowed_tools` in YAML)
-- Native tools as alternative to Bash CLI invocation
-- Session resume auto-detection: on `onSessionStart` with `source: "resume"`, call `freefsm list --status active -j` to auto-bind `activeRunId` (Copilot-specific enhancement beyond Claude Code parity)
-- Configurable reminder interval via environment variable
+The existing `copilot/extension.mjs` implementation should be treated as obsolete once the plugin rework lands.
+
+Migration path:
+
+1. add the real plugin manifest + hook scripts
+2. update install flow
+3. update tests/e2e
+4. delete or explicitly deprecate the old `copilot/extension.mjs` path so the repository does not appear to support both architectures
+
+Do not try to support both architectures in parallel unless testing proves it is necessary.
+
+## Future Work
+
+- per-state tool allow/deny rules derived from workflow metadata
+- Copilot-specific skill variants if shared skills prove insufficient
+- stronger session identity if future hook payloads expose a stable session id
+- nicer denial wording tuned for Copilot’s planner behavior

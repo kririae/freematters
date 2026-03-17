@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "node ./dist/copilot-hooks/pre-tool-use.js",
+        "powershell": "node .\\dist\\copilot-hooks\\pre-tool-use.js",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}

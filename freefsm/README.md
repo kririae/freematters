@@ -2,7 +2,7 @@
 
 CLI-first FSM runtime for agent workflows. Define states and transitions in YAML; the CLI enforces valid paths while leaving in-state reasoning to the LLM.
 
-Works with **Claude Code** and **Codex**.
+Works with **Claude Code**, **Codex**, and **GitHub Copilot CLI**.
 
 ## Why
 
@@ -31,6 +31,9 @@ freefsm install claude
 
 # Codex — links skills (no hook support)
 freefsm install codex
+
+# GitHub Copilot CLI — installs plugin + preToolUse hook
+freefsm install copilot
 ```
 
 ### For Contributors
@@ -42,6 +45,7 @@ npm install && npm run build
 npm link
 
 freefsm install claude
+freefsm install copilot
 ```
 
 ## Usage
@@ -54,6 +58,7 @@ FreeFSM is typically used through these skills:
 - `/freefsm:finish` — abort an active run
 
 Codex skill names use `$` instead of `/`.
+Copilot skill names use hyphens: `/freefsm-create`, `/freefsm-start`, `/freefsm-current`, `/freefsm-finish`.
 
 ## Bundled Workflows
 

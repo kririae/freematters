@@ -1,0 +1,6 @@
+{
+  "name": "freefsm",
+  "description": "CLI-first FSM runtime for agent workflows",
+  "skills": ["copilot/skills"],
+  "hooks": "copilot/hooks.json"
+}

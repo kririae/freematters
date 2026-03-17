@@ -14,10 +14,71 @@ import {
 import { tmpdir } from "node:os";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
+
+vi.mock("node:child_process", async () => {
+  const actual =
+    await vi.importActual<typeof import("node:child_process")>("node:child_process");
+
+  return {
+    ...actual,
+    execFileSync: vi.fn(actual.execFileSync),
+  };
+});
+
+import { install } from "../commands/install.js";
 
 const CLI = resolve(__dirname, "../../dist/cli.js");
 const PACKAGE_ROOT = resolve(__dirname, "../..");
+const COPILOT_PLUGIN_MANIFEST = JSON.stringify(
+  {
+    name: "freefsm",
+    description: "CLI-first FSM runtime for agent workflows",
+    skills: ["copilot/skills"],
+    hooks: "copilot/hooks.json",
+  },
+  null,
+  2,
+);
+
+function createCopilotHooksConfig(options?: {
+  bash?: string;
+  powershell?: string;
+}): string {
+  return JSON.stringify(
+    {
+      version: 1,
+      hooks: {
+        preToolUse: [
+          {
+            type: "command",
+            bash: options?.bash ?? "node ./dist/copilot-hooks/pre-tool-use.js",
+            powershell:
+              options?.powershell ?? "node .\\dist\\copilot-hooks\\pre-tool-use.js",
+            timeoutSec: 30,
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+}
+
+class ExitError extends Error {
+  constructor(readonly code: number) {
+    super(`process.exit(${code})`);
+  }
+}
 
 function cli(args: string): string {
   return execFileSync("node", [CLI, ...args.split(/\s+/)], {
@@ -154,6 +215,175 @@ describeClaude("install claude", () => {
   test("re-install succeeds without errors", () => {
     const stdout = cli("install claude");
     expect(stdout).toContain("FreeFSM plugin installed for Claude Code");
+  });
+});
+
+// ─── Copilot install ────────────────────────────────────────────
+
+describe("install copilot", () => {
+  const originalHome = process.env.HOME;
+  const tempRoots = new Set<string>();
+
+  function createCopilotPackageFixture(options?: {
+    plugin?: boolean;
+    hooks?: boolean;
+    buildOutput?: boolean;
+    hooksConfig?: string;
+  }): { packageRoot: string; hookEntrypoint: string } {
+    const packageRoot = mkdtempSync(join(tmpdir(), "freefsm-copilot-install-"));
+    const hookEntrypoint = join(
+      packageRoot,
+      "dist",
+      "copilot-hooks",
+      "pre-tool-use.js",
+    );
+    tempRoots.add(packageRoot);
+
+    mkdirSync(join(packageRoot, "copilot", "skills", "freefsm-create"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(packageRoot, "copilot", "skills", "freefsm-create", "SKILL.md"),
+      "---\nname: freefsm-create\ndescription: start.\n---\n",
+    );
+
+    if (options?.plugin !== false) {
+      writeFileSync(join(packageRoot, "plugin.json"), COPILOT_PLUGIN_MANIFEST);
+    }
+
+    if (options?.hooks !== false) {
+      mkdirSync(join(packageRoot, "copilot"), { recursive: true });
+      writeFileSync(
+        join(packageRoot, "copilot", "hooks.json"),
+        options?.hooksConfig ?? createCopilotHooksConfig(),
+      );
+    }
+
+    if (options?.buildOutput !== false) {
+      mkdirSync(join(packageRoot, "dist", "copilot-hooks"), { recursive: true });
+      writeFileSync(hookEntrypoint, "export {};\n");
+    }
+
+    return { packageRoot, hookEntrypoint };
+  }
+
+  function runInstallExpectingFailure(packageRoot: string): string {
+    const errorLines: string[] = [];
+    const execSpy = vi.mocked(execFileSync);
+    vi.spyOn(console, "error").mockImplementation((...args) => {
+      errorLines.push(args.join(" "));
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(process, "exit").mockImplementation((code?: number | string | null) => {
+      throw new ExitError(Number(code ?? 0));
+    });
+
+    let thrown: unknown;
+    try {
+      install("copilot", packageRoot);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ExitError);
+    expect((thrown as ExitError).code).toBe(2);
+    expect(execSpy).not.toHaveBeenCalled();
+    return errorLines.join("\n");
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const tempHome = mkdtempSync(join(tmpdir(), "freefsm-copilot-home-"));
+    tempRoots.add(tempHome);
+    process.env.HOME = tempHome;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) {
+      process.env.HOME = undefined;
+    } else {
+      process.env.HOME = originalHome;
+    }
+
+    for (const tempRoot of tempRoots) {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+    tempRoots.clear();
+  });
+
+  test("invokes copilot plugin install for the package root", () => {
+    const { packageRoot } = createCopilotPackageFixture();
+    const logLines: string[] = [];
+    const execSpy = vi.mocked(execFileSync).mockReturnValueOnce(Buffer.from(""));
+    const homeDir = process.env.HOME ?? "";
+    const copilotSkillsTarget = join(homeDir, ".copilot", "skills", "freefsm");
+    const copilotExtensionsTarget = join(homeDir, ".copilot", "extensions", "freefsm");
+
+    vi.spyOn(console, "log").mockImplementation((...args) => {
+      logLines.push(args.join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    install("copilot", packageRoot);
+
+    const output = logLines.join("\n");
+
+    expect(execSpy).toHaveBeenCalledWith(
+      "copilot",
+      ["plugin", "install", packageRoot],
+      { stdio: "inherit" },
+    );
+    expect(output).toContain("Installing Copilot plugin");
+    expect(output).toContain("FreeFSM plugin installed for Copilot CLI");
+    expect(output).not.toContain("linked");
+    expect(existsSync(copilotSkillsTarget)).toBe(false);
+    expect(existsSync(copilotExtensionsTarget)).toBe(false);
+  });
+
+  test("fails clearly when plugin.json is missing", () => {
+    const { packageRoot } = createCopilotPackageFixture({ plugin: false });
+
+    const output = runInstallExpectingFailure(packageRoot);
+
+    expect(output).toContain("Copilot plugin manifest not found");
+    expect(output).toContain(join(packageRoot, "plugin.json"));
+  });
+
+  test("fails clearly when copilot/hooks.json is missing", () => {
+    const { packageRoot } = createCopilotPackageFixture({ hooks: false });
+
+    const output = runInstallExpectingFailure(packageRoot);
+
+    expect(output).toContain("Copilot hooks config not found");
+    expect(output).toContain(join(packageRoot, "copilot", "hooks.json"));
+  });
+
+  test("fails clearly when built Copilot hook entrypoints are missing", () => {
+    const { packageRoot, hookEntrypoint } = createCopilotPackageFixture({
+      buildOutput: false,
+    });
+
+    const output = runInstallExpectingFailure(packageRoot);
+
+    expect(output).toContain("Copilot hook entrypoint not found");
+    expect(output).toContain(hookEntrypoint);
+    expect(output).toContain("npm run build");
+  });
+
+  test("fails clearly when hook entrypoints are not rooted at dist/copilot-hooks", () => {
+    const invalidHookPath = "./scripts/../../dist/copilot-hooks/pre-tool-use.js";
+    const { packageRoot } = createCopilotPackageFixture({
+      hooksConfig: createCopilotHooksConfig({
+        bash: `node ${invalidHookPath}`,
+      }),
+    });
+
+    const output = runInstallExpectingFailure(packageRoot);
+
+    expect(output).toContain(
+      "Copilot hook entrypoint must be rooted at dist/copilot-hooks/",
+    );
+    expect(output).toContain(invalidHookPath);
   });
 });
 

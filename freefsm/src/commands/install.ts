@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -17,6 +18,7 @@ type Platform = "claude" | "codex" | "copilot";
 
 const MARKETPLACE_NAME = "freefsm-local";
 const PLUGIN_NAME = "freefsm";
+const COPILOT_PLUGIN_DIR = ".copilot-plugin";
 const COPILOT_PLUGIN_MANIFEST = ".copilot-plugin/plugin.json";
 const COPILOT_HOOKS_CONFIG = "hooks.json";
 const COPILOT_SKILL_NAME = /^[a-z0-9-]+$/;
@@ -78,6 +80,15 @@ function readJsonFile<T>(path: string, missingLabel: string): T {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     failInstall([`Failed to parse JSON: ${path}`, message]);
+  }
+}
+
+function pathExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -281,7 +292,7 @@ function validateCopilotPluginAssets(packageRoot: string): void {
 
 function linkTarget(source: string, target: string, label: string): void {
   // Replace existing target, backing up if it's not a symlink
-  if (existsSync(target)) {
+  if (pathExists(target)) {
     try {
       readlinkSync(target);
       // It's a symlink — safe to remove and update
@@ -301,6 +312,30 @@ function linkTarget(source: string, target: string, label: string): void {
 
   symlinkSync(source, target);
   console.log(`${label}: ${target} -> ${source}`);
+}
+
+function prepareCopilotWrapper(packageRoot: string): string {
+  const wrapperDir = join(packageRoot, COPILOT_PLUGIN_DIR);
+  const skillsSource = join(packageRoot, "copilot", "skills");
+  const hooksSource = join(packageRoot, "copilot", "hooks.json");
+
+  if (!existsSync(skillsSource)) {
+    failInstall(`Copilot skills directory not found: ${skillsSource}`);
+  }
+
+  if (!existsSync(hooksSource)) {
+    failInstall(`Copilot hooks config not found: ${hooksSource}`);
+  }
+
+  mkdirSync(wrapperDir, { recursive: true });
+  linkTarget("../copilot/skills", join(wrapperDir, "skills"), "Copilot wrapper skills");
+  linkTarget(
+    "../copilot/hooks.json",
+    join(wrapperDir, "hooks.json"),
+    "Copilot wrapper hooks",
+  );
+
+  return wrapperDir;
 }
 
 function installClaude(packageRoot: string): void {
@@ -341,10 +376,11 @@ function installCodex(packageRoot: string): void {
 }
 
 function installCopilot(packageRoot: string): void {
+  const wrapperDir = prepareCopilotWrapper(packageRoot);
   validateCopilotPluginAssets(packageRoot);
 
-  console.log(`Installing Copilot plugin from ${packageRoot}`);
-  run("copilot", ["plugin", "install", packageRoot]);
+  console.log(`Installing Copilot plugin from ${wrapperDir}`);
+  run("copilot", ["plugin", "install", wrapperDir]);
 
   console.log("\nFreeFSM plugin installed for Copilot CLI.");
   console.log(

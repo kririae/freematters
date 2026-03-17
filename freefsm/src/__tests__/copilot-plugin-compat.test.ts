@@ -67,7 +67,7 @@ function writeSkillFixture(
   dirName: string,
   skillName: string,
 ): void {
-  const skillDir = join(packageRoot, ".copilot-plugin", "skills", dirName);
+  const skillDir = join(packageRoot, "copilot", "skills", dirName);
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(
     join(skillDir, "SKILL.md"),
@@ -82,6 +82,7 @@ function createCopilotPackageFixture(
   const packageRoot = mkdtempSync(join(tmpdir(), "freefsm-copilot-plugin-compat-"));
 
   mkdirSync(join(packageRoot, ".copilot-plugin"), { recursive: true });
+  mkdirSync(join(packageRoot, "copilot"), { recursive: true });
   mkdirSync(join(packageRoot, "dist", "copilot-hooks"), { recursive: true });
 
   writeSkillFixture(packageRoot, skillDir, skillName);
@@ -90,7 +91,7 @@ function createCopilotPackageFixture(
     COPILOT_PLUGIN_MANIFEST,
   );
   writeFileSync(
-    join(packageRoot, ".copilot-plugin", "hooks.json"),
+    join(packageRoot, "copilot", "hooks.json"),
     createCopilotHooksConfig(),
   );
   writeFileSync(

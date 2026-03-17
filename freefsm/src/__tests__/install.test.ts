@@ -43,8 +43,8 @@ const COPILOT_PLUGIN_MANIFEST = JSON.stringify(
   {
     name: "freefsm",
     description: "CLI-first FSM runtime for agent workflows",
-    skills: ["copilot/skills"],
-    hooks: "copilot/hooks.json",
+    skills: ["skills"],
+    hooks: "hooks.json",
   },
   null,
   2,
@@ -227,6 +227,7 @@ describe("install copilot", () => {
   function createCopilotPackageFixture(options?: {
     plugin?: boolean;
     hooks?: boolean;
+    skills?: boolean;
     buildOutput?: boolean;
     hooksConfig?: string;
   }): { packageRoot: string; hookEntrypoint: string } {
@@ -239,16 +240,23 @@ describe("install copilot", () => {
     );
     tempRoots.add(packageRoot);
 
-    mkdirSync(join(packageRoot, "copilot", "skills", "freefsm-create"), {
-      recursive: true,
-    });
-    writeFileSync(
-      join(packageRoot, "copilot", "skills", "freefsm-create", "SKILL.md"),
-      "---\nname: freefsm-create\ndescription: start.\n---\n",
-    );
+    mkdirSync(join(packageRoot, ".copilot-plugin"), { recursive: true });
+
+    if (options?.skills !== false) {
+      mkdirSync(join(packageRoot, "copilot", "skills", "freefsm-create"), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(packageRoot, "copilot", "skills", "freefsm-create", "SKILL.md"),
+        "---\nname: freefsm-create\ndescription: start.\n---\n",
+      );
+    }
 
     if (options?.plugin !== false) {
-      writeFileSync(join(packageRoot, "plugin.json"), COPILOT_PLUGIN_MANIFEST);
+      writeFileSync(
+        join(packageRoot, ".copilot-plugin", "plugin.json"),
+        COPILOT_PLUGIN_MANIFEST,
+      );
     }
 
     if (options?.hooks !== false) {
@@ -311,13 +319,12 @@ describe("install copilot", () => {
     tempRoots.clear();
   });
 
-  test("invokes copilot plugin install for the package root", () => {
+  test("creates wrapper symlinks and installs the copilot wrapper directory", () => {
     const { packageRoot } = createCopilotPackageFixture();
     const logLines: string[] = [];
     const execSpy = vi.mocked(execFileSync).mockReturnValueOnce(Buffer.from(""));
-    const homeDir = process.env.HOME ?? "";
-    const copilotSkillsTarget = join(homeDir, ".copilot", "skills", "freefsm");
-    const copilotExtensionsTarget = join(homeDir, ".copilot", "extensions", "freefsm");
+    const wrapperSkillsPath = join(packageRoot, ".copilot-plugin", "skills");
+    const wrapperHooksPath = join(packageRoot, ".copilot-plugin", "hooks.json");
 
     vi.spyOn(console, "log").mockImplementation((...args) => {
       logLines.push(args.join(" "));
@@ -330,14 +337,16 @@ describe("install copilot", () => {
 
     expect(execSpy).toHaveBeenCalledWith(
       "copilot",
-      ["plugin", "install", packageRoot],
+      ["plugin", "install", join(packageRoot, ".copilot-plugin")],
       { stdio: "inherit" },
     );
+    expect(lstatSync(wrapperSkillsPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(wrapperSkillsPath)).toBe("../copilot/skills");
+    expect(lstatSync(wrapperHooksPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(wrapperHooksPath)).toBe("../copilot/hooks.json");
     expect(output).toContain("Installing Copilot plugin");
     expect(output).toContain("FreeFSM plugin installed for Copilot CLI");
     expect(output).not.toContain("linked");
-    expect(existsSync(copilotSkillsTarget)).toBe(false);
-    expect(existsSync(copilotExtensionsTarget)).toBe(false);
   });
 
   test("fails clearly when plugin.json is missing", () => {
@@ -346,7 +355,7 @@ describe("install copilot", () => {
     const output = runInstallExpectingFailure(packageRoot);
 
     expect(output).toContain("Copilot plugin manifest not found");
-    expect(output).toContain(join(packageRoot, "plugin.json"));
+    expect(output).toContain(join(packageRoot, ".copilot-plugin", "plugin.json"));
   });
 
   test("fails clearly when copilot/hooks.json is missing", () => {
@@ -356,6 +365,15 @@ describe("install copilot", () => {
 
     expect(output).toContain("Copilot hooks config not found");
     expect(output).toContain(join(packageRoot, "copilot", "hooks.json"));
+  });
+
+  test("fails clearly when copilot/skills is missing", () => {
+    const { packageRoot } = createCopilotPackageFixture({ skills: false });
+
+    const output = runInstallExpectingFailure(packageRoot);
+
+    expect(output).toContain("Copilot skills directory not found");
+    expect(output).toContain(join(packageRoot, "copilot", "skills"));
   });
 
   test("fails clearly when built Copilot hook entrypoints are missing", () => {
@@ -384,6 +402,67 @@ describe("install copilot", () => {
       "Copilot hook entrypoint must be rooted at dist/copilot-hooks/",
     );
     expect(output).toContain(invalidHookPath);
+  });
+
+  test("re-install replaces wrong wrapper symlinks", () => {
+    const { packageRoot } = createCopilotPackageFixture();
+    const execSpy = vi.mocked(execFileSync).mockReturnValueOnce(Buffer.from(""));
+    const logLines: string[] = [];
+    const wrapperSkillsPath = join(packageRoot, ".copilot-plugin", "skills");
+    const wrapperHooksPath = join(packageRoot, ".copilot-plugin", "hooks.json");
+
+    symlinkSync("../wrong-skills", wrapperSkillsPath);
+    symlinkSync("../wrong-hooks.json", wrapperHooksPath);
+
+    vi.spyOn(console, "log").mockImplementation((...args) => {
+      logLines.push(args.join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    install("copilot", packageRoot);
+
+    expect(execSpy).toHaveBeenCalledWith(
+      "copilot",
+      ["plugin", "install", join(packageRoot, ".copilot-plugin")],
+      { stdio: "inherit" },
+    );
+    expect(readlinkSync(wrapperSkillsPath)).toBe("../copilot/skills");
+    expect(readlinkSync(wrapperHooksPath)).toBe("../copilot/hooks.json");
+    expect(logLines.join("\n")).toContain("Updating existing symlink");
+  });
+
+  test("backs up conflicting wrapper files before replacing them", () => {
+    const { packageRoot } = createCopilotPackageFixture();
+    const execSpy = vi.mocked(execFileSync).mockReturnValueOnce(Buffer.from(""));
+    const logLines: string[] = [];
+    const wrapperSkillsPath = join(packageRoot, ".copilot-plugin", "skills");
+    const wrapperHooksPath = join(packageRoot, ".copilot-plugin", "hooks.json");
+
+    mkdirSync(wrapperSkillsPath, { recursive: true });
+    writeFileSync(join(wrapperSkillsPath, "marker.txt"), "original");
+    writeFileSync(wrapperHooksPath, "not-a-symlink");
+
+    vi.spyOn(console, "log").mockImplementation((...args) => {
+      logLines.push(args.join(" "));
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    install("copilot", packageRoot);
+
+    expect(execSpy).toHaveBeenCalledWith(
+      "copilot",
+      ["plugin", "install", join(packageRoot, ".copilot-plugin")],
+      { stdio: "inherit" },
+    );
+    expect(lstatSync(wrapperSkillsPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(wrapperSkillsPath)).toBe("../copilot/skills");
+    expect(readFileSync(join(`${wrapperSkillsPath}.bak`, "marker.txt"), "utf-8")).toBe(
+      "original",
+    );
+    expect(lstatSync(wrapperHooksPath).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(wrapperHooksPath)).toBe("../copilot/hooks.json");
+    expect(readFileSync(`${wrapperHooksPath}.bak`, "utf-8")).toBe("not-a-symlink");
+    expect(logLines.join("\n")).toContain("Backed up");
   });
 });
 

@@ -111,7 +111,7 @@ Expected: the produced tarball contains `.copilot-plugin/plugin.json` and no lon
 
 ```bash
 git add freefsm/.copilot-plugin/plugin.json freefsm/package.json freefsm/src/__tests__/copilot-plugin-compat.test.ts freefsm/plugin.json
-git commit -m "refactor: move Copilot manifest into wrapper"
+git commit -s -m "refactor: move Copilot manifest into wrapper"
 ```
 
 ### Task 2: Make `install copilot` create/refresh wrapper symlinks
@@ -178,7 +178,7 @@ Expected: PASS on install-target and symlink-refresh assertions.
 
 ```bash
 git add freefsm/src/commands/install.ts freefsm/src/__tests__/install.test.ts freefsm/src/__tests__/copilot-plugin-compat.test.ts
-git commit -m "refactor: install Copilot through wrapper symlinks"
+git commit -s -m "refactor: install Copilot through wrapper symlinks"
 ```
 
 ## Chunk 2: CLI Hook Entry, E2E, and Docs
@@ -208,6 +208,12 @@ Add tests that assert:
 
 - the CLI exposes a hidden `_hook pre-tool-use` path that reaches the Copilot pre-tool-use handler
 - Commander registration is actually wired, not just the underlying module tests
+
+Assign ownership explicitly:
+
+- `copilot-plugin-compat.test.ts` owns the static Copilot hook-config assertions
+- `copilot-hooks.test.ts` owns pre-tool-use handler/module behavior
+- `integration.test.ts` owns CLI/Commander wiring for `freefsm _hook pre-tool-use`
 
 - [ ] **Step 2: Run the focused tests to verify failure**
 
@@ -244,7 +250,7 @@ Expected: PASS with the new CLI-based hook entry path.
 
 ```bash
 git add freefsm/src/cli.ts freefsm/copilot/hooks.json freefsm/src/__tests__/copilot-plugin-compat.test.ts freefsm/src/__tests__/copilot-hooks.test.ts freefsm/src/__tests__/integration.test.ts
-git commit -m "refactor: route Copilot hook through freefsm CLI"
+git commit -s -m "refactor: route Copilot hook through freefsm CLI"
 ```
 
 ### Task 4: Update real e2e and user-facing docs
@@ -306,7 +312,7 @@ Expected:
 
 ```bash
 git add freefsm/src/__tests__/copilot-e2e.test.ts freefsm/README.md
-git commit -m "test: verify Copilot wrapper chain end to end"
+git commit -s -m "test: verify Copilot wrapper chain end to end"
 ```
 
 ### Task 5: Final branch verification
@@ -320,20 +326,20 @@ git commit -m "test: verify Copilot wrapper chain end to end"
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev && git --no-pager diff --stat main...HEAD
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev && BASE=$(git merge-base HEAD main) && git --no-pager diff --stat "$BASE"..HEAD
 ```
 
-Expected: only the wrapper-migration, CLI hook-entry, test, and docs files described above.
+Expected: only the wrapper-migration, CLI hook-entry, test, and docs files described above for the current branch base.
 
 - [ ] **Step 2: Re-run final smoke verification**
 
 Run:
 
 ```bash
-cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run build && npm test && npm run check && npm test && FREEFSM_RUN_COPILOT_E2E=1 FREEFSM_COPILOT_E2E_MODEL=gpt-5-mini npm run test:integration -- src/__tests__/copilot-e2e.test.ts
+cd /home/krr/Projects/freematters/.worktrees/copilot-cli-extension-e2e-dev/freefsm && npm run build && npm test -- src/__tests__/copilot-plugin-compat.test.ts src/__tests__/copilot-hooks.test.ts src/__tests__/integration.test.ts && npm run test:integration -- src/__tests__/install.test.ts && npm run check && npm test -- src/__tests__/copilot-plugin-compat.test.ts src/__tests__/copilot-hooks.test.ts src/__tests__/integration.test.ts && FREEFSM_RUN_COPILOT_E2E=1 FREEFSM_COPILOT_E2E_MODEL=gpt-5-mini npm run test:integration -- src/__tests__/copilot-e2e.test.ts
 ```
 
-Expected: PASS with no new regressions, including the wrapper/hook/e2e gates.
+Expected: PASS with no new regressions, including the wrapper install, CLI hook wiring, and e2e gates.
 
 - [ ] **Step 3: Confirm no verification-generated edits remain**
 

@@ -90,10 +90,7 @@ function createCopilotPackageFixture(
     join(packageRoot, ".copilot-plugin", "plugin.json"),
     COPILOT_PLUGIN_MANIFEST,
   );
-  writeFileSync(
-    join(packageRoot, "copilot", "hooks.json"),
-    createCopilotHooksConfig(),
-  );
+  writeFileSync(join(packageRoot, "copilot", "hooks.json"), createCopilotHooksConfig());
   writeFileSync(
     join(packageRoot, "dist", "copilot-hooks", "pre-tool-use.js"),
     "export {};\n",
@@ -181,48 +178,58 @@ describe("copilot plugin compatibility", () => {
     expect(output).toContain("freefsm:create");
   });
 
-  test('uses wrapper-local copilot manifest and package includes it', async () => {
-    const wrapperPath = join(PACKAGE_ROOT, '.copilot-plugin', 'plugin.json');
+  test("uses wrapper-local copilot manifest and package includes it", async () => {
+    const wrapperPath = join(PACKAGE_ROOT, ".copilot-plugin", "plugin.json");
     expect(existsSync(wrapperPath)).toBe(true);
 
-    const wrapper = JSON.parse(readFileSync(wrapperPath, 'utf-8')) as {
+    const wrapper = JSON.parse(readFileSync(wrapperPath, "utf-8")) as {
       name?: string;
       skills?: string[];
       hooks?: string;
     };
 
-    expect(wrapper).toMatchObject({ name: 'freefsm', skills: ['skills'], hooks: 'hooks.json' });
+    expect(wrapper).toMatchObject({
+      name: "freefsm",
+      skills: ["skills"],
+      hooks: "hooks.json",
+    });
 
     const pkg = JSON.parse(
-      readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8'),
+      readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"),
     ) as {
       files?: string[];
     };
 
-    expect(pkg.files).toContain('.copilot-plugin/');
+    expect(pkg.files).toContain(".copilot-plugin/");
 
     // Use the real child_process implementation for pack/tar to avoid mocking interference
-    const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+    const actual =
+      await vi.importActual<typeof import("node:child_process")>("node:child_process");
     const realExec = actual.execFileSync;
 
     // create an npm pack (ignore scripts to avoid build) and inspect the produced tarball
-    realExec('npm', ['pack', '--silent', '--ignore-scripts'], { cwd: PACKAGE_ROOT });
+    realExec("npm", ["pack", "--silent", "--ignore-scripts"], { cwd: PACKAGE_ROOT });
 
-    const pkgMeta = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8')) as { name: string; version: string };
-    const tarballName = `${pkgMeta.name.replace('@', '').replace('/', '-')}-${pkgMeta.version}.tgz`;
+    const pkgMeta = JSON.parse(
+      readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"),
+    ) as { name: string; version: string };
+    const tarballName = `${pkgMeta.name.replace("@", "").replace("/", "-")}-${pkgMeta.version}.tgz`;
     const tarballPath = join(PACKAGE_ROOT, tarballName);
 
-    const list = realExec('tar', ['-tf', tarballPath], { cwd: PACKAGE_ROOT }).toString();
+    const list = realExec("tar", ["-tf", tarballPath], {
+      cwd: PACKAGE_ROOT,
+    }).toString();
 
-    expect(list).toContain('package/.copilot-plugin/plugin.json');
-    expect(list).not.toContain('package/plugin.json');
+    expect(list).toContain("package/.copilot-plugin/plugin.json");
+    expect(list).not.toContain("package/plugin.json");
 
     rmSync(tarballPath);
-
   });
 
   test("ships Copilot hook config through freefsm CLI entry", () => {
-    const hooks = JSON.parse(readFileSync(join(PACKAGE_ROOT, "copilot", "hooks.json"), "utf-8")) as {
+    const hooks = JSON.parse(
+      readFileSync(join(PACKAGE_ROOT, "copilot", "hooks.json"), "utf-8"),
+    ) as {
       hooks?: {
         preToolUse?: Array<{
           type?: string;
@@ -242,5 +249,4 @@ describe("copilot plugin compatibility", () => {
       },
     ]);
   });
-
 });

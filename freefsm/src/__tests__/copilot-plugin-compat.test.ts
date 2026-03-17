@@ -170,4 +170,43 @@ describe("copilot plugin compatibility", () => {
     expect(output).toContain("Copilot skill name must match its directory name");
     expect(output).toContain("freefsm:create");
   });
+
+  test('uses wrapper-local copilot manifest and package includes it', () => {
+    const wrapperPath = join(PACKAGE_ROOT, '.copilot-plugin', 'plugin.json');
+    expect(existsSync(wrapperPath)).toBe(true);
+
+    const wrapper = JSON.parse(readFileSync(wrapperPath, 'utf-8')) as {
+      name?: string;
+      skills?: string[];
+      hooks?: string;
+    };
+
+    expect(wrapper).toMatchObject({ name: 'freefsm', skills: ['skills'], hooks: 'hooks.json' });
+
+    const pkg = JSON.parse(
+      readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8'),
+    ) as {
+      files?: string[];
+    };
+
+    expect(pkg.files).toContain('.copilot-plugin/');
+
+    // create an npm pack (ignore scripts to avoid build) and inspect the produced tarball
+    execFileSync('npm', ['pack', '--silent', '--ignore-scripts'], { cwd: PACKAGE_ROOT });
+
+    const pkgMeta = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8')) as { name: string; version: string };
+    const tarballName = `${pkgMeta.name.replace('@', '').replace('/', '-')}-${pkgMeta.version}.tgz`;
+    const tarballPath = join(PACKAGE_ROOT, tarballName);
+
+    const tarContent = readFileSync(tarballPath);
+
+    const tarText = tarContent.toString('utf-8');
+
+    expect(tarText).toContain('package/.copilot-plugin/plugin.json');
+    expect(tarText).not.toContain('package/plugin.json');
+
+    rmSync(tarballPath);
+
+  });
+
 });

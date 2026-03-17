@@ -38,7 +38,7 @@
   },
   "files": [
     "dist/",
-    "plugin.json",
+    ".copilot-plugin/",
     "prompts/",
     "workflows/",
     "skills/",

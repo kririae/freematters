@@ -629,7 +629,8 @@ describe("Hook — pre-tool-use", () => {
       ),
     ).toBeNull();
 
-    for (let i = 0; i < 9; i++) {
+    // 4 calls below the limit of 5
+    for (let i = 0; i < 4; i++) {
       expect(
         runPreToolHook(
           {
@@ -643,13 +644,14 @@ describe("Hook — pre-tool-use", () => {
       ).toBeNull();
     }
 
+    // 5th call triggers deny
     expect(
       runPreToolHook(
         {
           sessionId: "copilot-sess",
           cwd: "/workspace/project",
-          toolName: "view",
-          toolInput: { path: "README.md" },
+          toolName: "edit",
+          toolInput: {},
         },
         hookRoot,
       ),

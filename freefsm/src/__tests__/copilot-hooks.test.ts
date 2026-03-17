@@ -158,7 +158,7 @@ describe("copilot hook payload parsing and classification", () => {
         toolName: "bash",
         toolInput: { command: "freefsm current --run-id run-1 --root /tmp/root" },
       }),
-      expected: { kind: "freefsm-reset", counted: false, action: "current" },
+      expected: { kind: "counted", counted: true },
     },
     {
       name: "goto command",
@@ -199,14 +199,14 @@ describe("copilot hook payload parsing and classification", () => {
       payload: rawPayload({
         toolName: "edit",
       }),
-      expected: { kind: "ignored", counted: false },
+      expected: { kind: "counted", counted: true },
     },
     {
       name: "create command",
       payload: rawPayload({
         toolName: "create",
       }),
-      expected: { kind: "ignored", counted: false },
+      expected: { kind: "counted", counted: true },
     },
   ])("classifies $name", async ({ payload, expected }) => {
     const { classifyToolCall, parseHookPayload } = await loadParseModule();
@@ -375,7 +375,7 @@ describe("pre-tool-use decisions", () => {
     expect(result).toEqual({ kind: "allow" });
   });
 
-  test("counts only bash and view while ignoring edit and create", async () => {
+  test("counts all tool types toward the gate limit", async () => {
     const { parseHookPayload } = await loadParseModule();
     const { bindingKeyFor, loadBinding, saveBinding } = await loadBindingsModule();
     const { evaluatePreToolUse } = await loadPreToolUseModule();
@@ -391,49 +391,28 @@ describe("pre-tool-use decisions", () => {
       updatedAt: FIXED_NOW,
     });
 
-    for (const toolName of ["edit", "create", "search"] as const) {
+    // All tool types — bash, view, edit, create — count toward the limit
+    for (const toolName of ["bash", "view", "edit", "create"] as const) {
       expect(
-        evaluatePreToolUse(parseHookPayload(rawPayload({ toolName })), {
-          stateDir,
-          now: () => FIXED_NOW,
-          refreshRun: () => {
-            throw new Error("refresh should not run below threshold");
+        evaluatePreToolUse(
+          parseHookPayload(
+            rawPayload({
+              toolName,
+              toolInput: toolName === "bash" ? { command: "printf 'hello'" } : {},
+            }),
+          ),
+          {
+            stateDir,
+            now: () => FIXED_NOW,
+            refreshRun: () => {
+              throw new Error("refresh should not run below threshold");
+            },
           },
-        }),
+        ),
       ).toEqual({ kind: "allow" });
     }
 
-    expect(loadBinding(stateDir, key)?.gatedToolCount).toBe(0);
-
-    expect(
-      evaluatePreToolUse(
-        parseHookPayload(
-          rawPayload({
-            toolName: "bash",
-            toolInput: { command: "printf 'hello'" },
-          }),
-        ),
-        {
-          stateDir,
-          now: () => FIXED_NOW,
-          refreshRun: () => {
-            throw new Error("refresh should not run below threshold");
-          },
-        },
-      ),
-    ).toEqual({ kind: "allow" });
-    expect(loadBinding(stateDir, key)?.gatedToolCount).toBe(1);
-
-    expect(
-      evaluatePreToolUse(parseHookPayload(rawPayload({ toolName: "view" })), {
-        stateDir,
-        now: () => FIXED_NOW,
-        refreshRun: () => {
-          throw new Error("refresh should not run below threshold");
-        },
-      }),
-    ).toEqual({ kind: "allow" });
-    expect(loadBinding(stateDir, key)?.gatedToolCount).toBe(2);
+    expect(loadBinding(stateDir, key)?.gatedToolCount).toBe(4);
   });
 
   test("denies the 10th counted call with a compact reminder and resets the counter", async () => {
@@ -472,7 +451,7 @@ describe("pre-tool-use decisions", () => {
     expect(loadBinding(stateDir, key)?.gatedToolCount).toBe(0);
   });
 
-  test("freefsm start creates a binding and freefsm current/goto/finish reset the counter", async () => {
+  test("freefsm start creates a binding and freefsm goto/finish reset the counter", async () => {
     const { parseHookPayload } = await loadParseModule();
     const { bindingKeyFor, loadBinding, saveBinding } = await loadBindingsModule();
     const { evaluatePreToolUse } = await loadPreToolUseModule();
@@ -505,20 +484,49 @@ describe("pre-tool-use decisions", () => {
       gatedToolCount: 0,
     });
 
+    // freefsm current is now counted, not a reset — it increments the counter
     saveBinding(stateDir, key, {
       sessionId: "session-1",
       cwd: "/workspace/project",
       runId: "run-2",
       rootDir: "/tmp/root-2",
-      gatedToolCount: 7,
+      gatedToolCount: 3,
       updatedAt: FIXED_NOW,
     });
 
+    expect(
+      evaluatePreToolUse(
+        parseHookPayload(
+          rawPayload({
+            toolName: "bash",
+            toolInput: { command: "freefsm current --run-id run-2 --root /tmp/root-2" },
+          }),
+        ),
+        {
+          stateDir,
+          now: () => FIXED_NOW,
+          refreshRun: () => {
+            throw new Error("refresh should not run below threshold");
+          },
+        },
+      ),
+    ).toEqual({ kind: "allow" });
+    expect(loadBinding(stateDir, key)?.gatedToolCount).toBe(4);
+
+    // goto and finish still reset the counter
     for (const command of [
-      "freefsm current --run-id run-2 --root /tmp/root-2",
       "freefsm goto done --run-id run-2 --on next --root /tmp/root-2",
       "freefsm finish --run-id run-2 --root /tmp/root-2",
     ]) {
+      saveBinding(stateDir, key, {
+        sessionId: "session-1",
+        cwd: "/workspace/project",
+        runId: "run-2",
+        rootDir: "/tmp/root-2",
+        gatedToolCount: 3,
+        updatedAt: FIXED_NOW,
+      });
+
       expect(
         evaluatePreToolUse(
           parseHookPayload(rawPayload({ toolName: "bash", toolInput: { command } })),
@@ -534,15 +542,6 @@ describe("pre-tool-use decisions", () => {
         ),
       ).toEqual({ kind: "allow" });
       expect(loadBinding(stateDir, key)?.gatedToolCount).toBe(0);
-
-      saveBinding(stateDir, key, {
-        sessionId: "session-1",
-        cwd: "/workspace/project",
-        runId: "run-2",
-        rootDir: "/tmp/root-2",
-        gatedToolCount: 7,
-        updatedAt: FIXED_NOW,
-      });
     }
   });
 

@@ -20,7 +20,7 @@ export interface PreToolUseOptions {
   trace?: (message: string) => void;
 }
 
-const GATED_TOOL_LIMIT = 10;
+const GATED_TOOL_LIMIT = 5;
 export const FALLBACK_DENY_REASON = "[FSM] Run `freefsm current` before continuing.";
 const ALLOW_DECISION: HookDecision = { kind: "allow" };
 
@@ -140,7 +140,7 @@ export function evaluatePreToolUse(
     return ALLOW_DECISION;
   }
 
-  if (classification.kind !== "counted" || !binding) {
+  if (!binding) {
     return ALLOW_DECISION;
   }
 

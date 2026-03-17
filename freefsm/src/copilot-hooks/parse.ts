@@ -20,15 +20,11 @@ export type ToolClassification =
   | {
       kind: "freefsm-reset";
       counted: false;
-      action: "current" | "goto" | "finish";
+      action: "goto" | "finish";
     }
   | {
       kind: "counted";
       counted: true;
-    }
-  | {
-      kind: "ignored";
-      counted: false;
     };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -215,10 +211,6 @@ export function classifyToolCall(input: ParsedHookPayload): ToolClassification {
       };
     }
 
-    if (isFreefsmSubcommand(tokens, "current")) {
-      return { kind: "freefsm-reset", counted: false, action: "current" };
-    }
-
     if (isFreefsmSubcommand(tokens, "goto")) {
       return { kind: "freefsm-reset", counted: false, action: "goto" };
     }
@@ -226,17 +218,7 @@ export function classifyToolCall(input: ParsedHookPayload): ToolClassification {
     if (isFreefsmSubcommand(tokens, "finish")) {
       return { kind: "freefsm-reset", counted: false, action: "finish" };
     }
-
-    return { kind: "counted", counted: true };
   }
 
-  if (input.toolName === "view") {
-    return { kind: "counted", counted: true };
-  }
-
-  if (input.toolName === "edit" || input.toolName === "create") {
-    return { kind: "ignored", counted: false };
-  }
-
-  return { kind: "ignored", counted: false };
+  return { kind: "counted", counted: true };
 }

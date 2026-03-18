@@ -1,0 +1,129 @@
+version: 1
+guide: |
+  Systematic debugging workflow.
+
+  Use when there is a bug, failing test, build failure, unexpected behavior,
+  performance problem, or integration issue.
+
+  Rules that apply across all states:
+
+  - No fixes before root-cause investigation.
+  - Keep one hypothesis at a time.
+  - Create the smallest failing test or repro before patching whenever possible.
+  - After 3 failed fix attempts, stop and question the architecture instead of
+    trying a fourth fix.
+  - This workflow is intentionally lean: intake, investigate, fix, verify, done.
+
+initial: intake
+
+states:
+  intake:
+    prompt: |
+      # Intake
+
+      Capture the symptom and the minimum context needed to investigate:
+
+      - exact error or unexpected behavior
+      - expected vs actual
+      - reproduction command or steps
+      - environment details
+      - recent changes that may matter
+
+      If the user already supplied enough detail, summarize it and move to
+      investigation.
+
+      Do not propose fixes yet.
+    todos:
+      - Capture the symptom and expected vs actual behavior
+      - Record the reproduction command or steps
+      - Note environment details and recent changes
+    transitions:
+      info ready: investigate
+      need more info: intake
+
+  investigate:
+    prompt: |
+      # Root-Cause Investigation
+
+      Find the cause before touching code.
+
+      Do this in order:
+
+      1. Read the error message, logs, and stack trace carefully.
+      2. Reproduce the issue consistently.
+      3. Check recent changes, config, and dependencies.
+      4. Trace data flow or component boundaries if the failure spans multiple
+         layers.
+      5. Compare against a working example or reference implementation.
+      6. Form one explicit hypothesis.
+
+      If the issue is still unclear, gather more evidence instead of guessing.
+      Do not patch code in this state.
+    todos:
+      - Read errors and logs carefully
+      - Reproduce the issue
+      - Inspect recent changes and dependencies
+      - Compare against a working example
+      - Form one explicit hypothesis
+    transitions:
+      hypothesis ready: fix
+      need more evidence: investigate
+
+  fix:
+    prompt: |
+      # Fix
+
+      Test the hypothesis with the smallest possible change.
+
+      Preferred order:
+
+      1. Create a failing test or minimal repro if possible.
+      2. Apply one minimal fix only.
+      3. Avoid refactors, cleanup, or unrelated improvements.
+
+      If the hypothesis is wrong, go back to investigation with the new evidence.
+    todos:
+      - Create a failing test or minimal repro
+      - Apply one minimal fix
+      - Keep the change scoped to the hypothesis
+    transitions:
+      fix applied: verify
+
+  verify:
+    prompt: |
+      # Verify
+
+      Prove the fix worked.
+
+      Run the smallest useful verification first, then broader checks if available.
+      Confirm:
+
+      - the original repro now passes
+      - targeted tests pass
+      - no obvious regressions were introduced
+
+      If verification fails:
+      - on attempts 1-2, loop back to investigation
+      - on the 3rd failed fix attempt, stop and question the architecture instead
+        of trying another patch
+    todos:
+      - Rerun the original repro
+      - Run targeted tests
+      - Run broader checks if available
+      - Decide whether to loop or stop
+    transitions:
+      passes: done
+      retry: investigate
+      architecture concern: done
+
+  done:
+    prompt: |
+      # Debug Complete
+
+      Summarize:
+
+      - root cause
+      - fix applied
+      - verification performed
+      - any remaining risks or architectural concerns
+    transitions: {}

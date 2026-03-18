@@ -69,6 +69,7 @@ Copilot skill names use the plain form: `/create`, `/start`, `/current`, `/finis
 
 - `pdd` — Plan-Driven Development: interactive requirements, research, design, and planning
 - `spec-to-code` — implements a spec directory (from PDD) into working code via TDD
+- `debug` — systematic debugging workflow with a root-cause → fix → verify loop
 - `mr-lifecycle` — merge request lifecycle management
 
 Start a bundled workflow by name:
